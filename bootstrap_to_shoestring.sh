@@ -1,8 +1,9 @@
 #!/bin/bash
 
 # =============================================================================
-# Bootstrap → Shoestring 簡単移行スクリプト（完全版）
+# Bootstrap → Shoestring 簡単移行スクリプト（最終版）
 # 初心者でも安心してBootstrapからShoestringに移行できます
+# Python バージョン要件: >=3.9.2, <4.0.0
 # =============================================================================
 
 set -e  # エラーが発生したら停止
@@ -91,23 +92,38 @@ confirm() {
     done
 }
 
-# Python バージョンを比較する関数
+# Python バージョンを比較する関数（改良版）
 version_compare() {
-    local v1=$1
-    local v2=$2
+    local v1=$1  # 例: 3.10.12
+    local v2=$2  # 例: 3.9.2
     # バージョンを . で分割
     IFS='.' read -r -a v1_parts <<< "$v1"
     IFS='.' read -r -a v2_parts <<< "$v2"
     
-    # メジャーバージョン（3）を比較
-    if [ "${v1_parts[0]}" -lt "${v2_parts[0]}" ]; then
+    # 各部分を数値として扱う（0埋め）
+    local v1_major=${v1_parts[0]:-0}
+    local v1_minor=${v1_parts[1]:-0}
+    local v1_patch=${v1_parts[2]:-0}
+    local v2_major=${v2_parts[0]:-0}
+    local v2_minor=${v2_parts[1]:-0}
+    local v2_patch=${v2_parts[2]:-0}
+    
+    # メジャーバージョン比較
+    if [ "$v1_major" -lt "$v2_major" ]; then
         return 1
-    elif [ "${v1_parts[0]}" -gt "${v2_parts[0]}" ]; then
+    elif [ "$v1_major" -gt "$v2_major" ]; then
         return 0
     fi
     
-    # マイナーバージョン（10、11など）を比較
-    if [ "${v1_parts[1]}" -lt "${v2_parts[1]}" ]; then
+    # マイナーバージョン比較
+    if [ "$v1_minor" -lt "$v2_minor" ]; then
+        return 1
+    elif [ "$v1_minor" -gt "$v2_minor" ]; then
+        return 0
+    fi
+    
+    # パッチバージョン比較
+    if [ "$v1_patch" -lt "$v2_patch" ]; then
         return 1
     fi
     
@@ -126,19 +142,30 @@ check_system_environment() {
         if confirm "Python 3.10 をインストールしますか？"; then
             install_python
         else
-            print_error "Python 3.10 以上をインストールしてください。例: sudo apt install python3.10"
+            print_error "Python 3.9.2 以上（4.0.0 未満）をインストールしてください。例: sudo apt install python3.10"
             exit 1
         fi
     else
-        # バージョン比較
-        if version_compare "$python_version" "3.10"; then
-            print_success "Python 3.10 以上が利用可能です: $python_version"
+        # バージョン比較（>=3.9.2）
+        if version_compare "$python_version" "3.9.2"; then
+            # さらに <4.0.0 をチェック
+            if version_compare "$python_version" "4.0.0"; then
+                print_error "Python 4.0.0 以上はサポートされていません。現在のバージョン: $python_version"
+                if confirm "Python 3.10 をインストールしますか？"; then
+                    install_python
+                else
+                    print_error "Python 3.9.2 以上（4.0.0 未満）をインストールしてください。例: sudo apt install python3.10"
+                    exit 1
+                fi
+            else
+                print_success "Python 3.9.2 以上（4.0.0 未満）が利用可能です: $python_version"
+            fi
         else
-            print_error "Python 3.10 以上が必要です。現在のバージョン: $python_version"
+            print_error "Python 3.9.2 以上が必要です。現在のバージョン: $python_version"
             if confirm "Python 3.10 をインストールしますか？"; then
                 install_python
             else
-                print_error "Python 3.10 以上をインストールしてください。例: sudo apt install python3.10"
+                print_error "Python 3.9.2 以上（4.0.0 未満）をインストールしてください。例: sudo apt install python3.10"
                 exit 1
             fi
         fi
@@ -743,7 +770,7 @@ main() {
     # エラー時のハンドラ
     trap handle_error ERR
     
-    print_header "🚀 Bootstrap → Shoestring 簡単移行スクリプト（完全版）"
+    print_header "🚀 Bootstrap → Shoestring 簡単移行スクリプト（最終版）"
     echo ""
     print_info "このスクリプトは、Symbol BootstrapからShoestringへの移行を自動化します。"
     print_info "初心者でも安心！ステップごとにガイドします。"
