@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =============================================================================
-# Bootstrap → Shoestring 簡単移行スクリプト
+# Bootstrap → Shoestring 簡単移行スクリプト（完全版）
 # 初心者でも安心してBootstrapからShoestringに移行できます
 # =============================================================================
 
@@ -91,27 +91,64 @@ confirm() {
     done
 }
 
-# システム環境のチェック
+# Python バージョンを比較する関数
+version_compare() {
+    local v1=$1
+    local v2=$2
+    # バージョンを . で分割
+    IFS='.' read -r -a v1_parts <<< "$v1"
+    IFS='.' read -r -a v2_parts <<< "$v2"
+    
+    # メジャーバージョン（3）を比較
+    if [ "${v1_parts[0]}" -lt "${v2_parts[0]}" ]; then
+        return 1
+    elif [ "${v1_parts[0]}" -gt "${v2_parts[0]}" ]; then
+        return 0
+    fi
+    
+    # マイナーバージョン（10、11など）を比較
+    if [ "${v1_parts[1]}" -lt "${v2_parts[1]}" ]; then
+        return 1
+    fi
+    
+    return 0
+}
+
+# システム環境のチェック（修正版）
 check_system_environment() {
     print_header "システム環境をチェックしています..."
 
     # Python バージョンの確認
-    if ! python3 --version 2>/dev/null | grep -q "Python 3.10"; then
-        print_error "Python 3.10 が必要です。現在のバージョン: $(python3 --version 2>/dev/null || echo '不明')"
+    local python_version
+    python_version=$(python3 --version 2>/dev/null | awk '{print $2}' || echo "不明")
+    if [ "$python_version" = "不明" ]; then
+        print_error "Python3が見つかりません。"
         if confirm "Python 3.10 をインストールしますか？"; then
             install_python
         else
-            print_error "Python 3.10 をインストールしてください。例: sudo apt install python3.10"
+            print_error "Python 3.10 以上をインストールしてください。例: sudo apt install python3.10"
             exit 1
         fi
+    else
+        # バージョン比較
+        if version_compare "$python_version" "3.10"; then
+            print_success "Python 3.10 以上が利用可能です: $python_version"
+        else
+            print_error "Python 3.10 以上が必要です。現在のバージョン: $python_version"
+            if confirm "Python 3.10 をインストールしますか？"; then
+                install_python
+            else
+                print_error "Python 3.10 以上をインストールしてください。例: sudo apt install python3.10"
+                exit 1
+            fi
+        fi
     fi
-    print_success "Python 3.10 が利用可能です"
 
     # pip の確認と修復
     print_info "pip をチェック中..."
     local pip_bin="$HOME/.local/bin/pip3"
-    if ! $pip_bin --version &> /dev/null || ! $pip_bin --version | grep -q "pip 24\|pip 25"; then
-        print_warning "pip が古いか利用できません。最新版をインストールします。"
+    if ! command -v pip3 &> /dev/null; then
+        print_warning "pip が利用できません。最新版をインストールします。"
         curl -s https://bootstrap.pypa.io/get-pip.py -o get-pip.py
         python3 get-pip.py --user || {
             print_error "pip のインストールに失敗しました。インターネット接続を確認し、以下を試してください："
@@ -120,9 +157,9 @@ check_system_environment() {
             exit 1
         }
         rm get-pip.py
-        print_success "pip をインストールしました: $($pip_bin --version)"
+        print_success "pip をインストールしました: $(pip3 --version)"
     else
-        print_success "pip は最新です: $($pip_bin --version)"
+        print_success "pip は利用可能です: $(pip3 --version)"
     fi
 
     # PATH に ~/.local/bin を追加
@@ -133,47 +170,17 @@ check_system_environment() {
         print_success "PATH を更新しました"
     fi
 
-    # html5lib の確認
-    if ! python3 -c "import html5lib" &> /dev/null; then
-        print_warning "html5lib が欠落しています。インストールします。"
-        $pip_bin install html5lib --user || {
-            print_error "html5lib のインストールに失敗しました。以下を試してください："
-            echo "$pip_bin install html5lib --user"
-            exit 1
-        }
-        print_success "html5lib をインストールしました"
-    fi
-
     # python3-venv の確認
     if ! python3 -c "import venv" &> /dev/null; then
         print_warning "python3-venv がありません。インストールします。"
         sudo apt update
-        sudo apt install python3.10-venv -y || {
+        sudo apt install python3-venv -y || {
             print_error "python3-venv のインストールに失敗しました。以下を試してください："
-            echo "sudo apt install python3.10-venv"
+            echo "sudo apt install python3-venv"
             exit 1
         }
         print_success "python3-venv をインストールしました"
     fi
-}
-
-# Python環境の詳細チェック
-check_python_environment() {
-    print_header "Python環境をチェックしています..."
-
-    # Python3の存在確認（check_system_environment でカバー済みだが、冗長性保持）
-    if ! command -v python3 &> /dev/null; then
-        print_error "Python3が見つかりません。"
-        exit 1
-    fi
-    print_success "Python3が利用可能です"
-
-    # pipの確認
-    if ! command -v pip3 &> /dev/null; then
-        print_error "pip3が見つかりません。"
-        exit 1
-    fi
-    print_success "pip3が利用可能です"
 }
 
 # Pythonインストール関数
@@ -310,11 +317,11 @@ setup_shoestring_environment() {
         print_info "Shoestringバージョン: $shoestring_version"
     fi
 
-    # 必要なライブラリの確認
+    # 必要なライブラリの確認（仮想環境内でチェック）
     print_info "必要なライブラリをチェック中..."
     local missing_libs=()
-    for lib in "aiohttp" "cryptography" "docker" "pyyaml"; do
-        if ! python3 -c "import $lib" &> /dev/null; then
+    for lib in "aiohttp" "cryptography" "docker" "pyyaml" "html5lib"; do
+        if ! "$venv_dir/bin/python" -c "import $lib" &> /dev/null; then
             missing_libs+=("$lib")
         fi
     done
@@ -334,8 +341,6 @@ setup_shoestring_environment() {
 
 # 前提条件チェック
 check_prerequisites() {
-    check_python_environment
-    
     print_header "その他の前提条件をチェックしています..."
     
     # Dockerの確認
@@ -725,6 +730,11 @@ handle_error() {
     echo ""
     print_info "解決しない場合、mikunに質問してください: https://x.com/mikunNEM"
     
+    # 仮想環境がアクティブな場合、非アクティブ化
+    if [ -n "$VIRTUAL_ENV" ]; then
+        deactivate
+    fi
+    
     exit 1
 }
 
@@ -733,7 +743,7 @@ main() {
     # エラー時のハンドラ
     trap handle_error ERR
     
-    print_header "🚀 Bootstrap → Shoestring 簡単移行スクリプト"
+    print_header "🚀 Bootstrap → Shoestring 簡単移行スクリプト（完全版）"
     echo ""
     print_info "このスクリプトは、Symbol BootstrapからShoestringへの移行を自動化します。"
     print_info "初心者でも安心！ステップごとにガイドします。"
@@ -755,6 +765,7 @@ main() {
     print_info "作業フォルダを作成中: $SHOESTRING_DIR"
     mkdir -p "$SHOESTRING_DIR"
     
+    setup_shoestring_environment
     stop_bootstrap
     create_backup
     create_ca_key
