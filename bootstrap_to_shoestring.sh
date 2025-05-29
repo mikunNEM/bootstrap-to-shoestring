@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =============================================================================
-# Bootstrap → Shoestring 簡単移行スクリプト（最終版）
+# Bootstrap → Shoestring 簡単移行スクリプト
 # 初心者でも安心してBootstrapからShoestringに移行できます
 # Python バージョン要件: >=3.9.2, <4.0.0
 # =============================================================================
@@ -38,7 +38,7 @@ print_info() {
     echo -e "${BLUE}ℹ️  $1${NC}"
 }
 
-# ユーザー入力を求める関数
+# ユーザー入力を求める関数（修正版）
 ask_user() {
     local question="$1"
     local default="$2"
@@ -67,6 +67,10 @@ ask_user() {
             echo -e "${RED}❌ 空白のみの入力は無効です。${NC}"
             continue
         fi
+        # チルダ（~）を$HOMEに展開
+        if [[ "$response" =~ ^~(/|$| ) ]]; then
+            response="${response/#\~/$HOME}"
+        fi
         # 絶対パスでない場合、現在のディレクトリ基準に変換
         if [[ ! "$response" =~ ^/ ]]; then
             response="$(pwd)/$response"
@@ -92,7 +96,7 @@ confirm() {
     done
 }
 
-# Python バージョンを比較する関数（改良版）
+# Python バージョンを比較する関数
 version_compare() {
     local v1=$1  # 例: 3.10.12
     local v2=$2  # 例: 3.9.2
@@ -130,7 +134,7 @@ version_compare() {
     return 0
 }
 
-# システム環境のチェック（修正版）
+# システム環境のチェック
 check_system_environment() {
     print_header "システム環境をチェックしています..."
 
