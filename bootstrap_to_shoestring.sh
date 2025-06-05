@@ -1,10 +1,12 @@
 #!/bin/bash
 
+#!/bin/bash
+
 # bootstrap_to_shoestring.sh - Symbol Bootstrap から Shoestring への移行スクリプト
 # 誰でも簡単に移行！依存自動インストール、権限エラー解決、初心者向けガイダンス付き。
 #
 # 使い方:
-#   1. スクリプトをダウンロード: curl -O https://example.com/bootstrap_to_shoestring.sh
+#   1. スクリプトをダウンロード: curl -O https://github.com/mikunNEM/bootstrap-to-shoestring/raw/main/bootstrap_to_shoestring.sh
 #   2. 実行権限: chmod +x ./bootstrap_to_shoestring.sh
 #   3. 実行: bash ./bootstrap_to_shoestring.sh [-y]
 #      -y: 確認をスキップ（上級者向け）
@@ -18,7 +20,7 @@
 #
 # FAQ:
 # - エラー時: setup.log を確認（tail -f ~/work/shoestring/setup.log）
-# - 仮想環境欠落: rm -rf ~/work/shoestring/shoestring-env; python3 -m venv ~/.work/shoemake
+# - 仮想環境欠落: rm -rf ~/work/shoestring/shoestring-env; python3 -m venv ~/work/shoestring/shoestring-env
 # - 権限エラー: chmod u+rwx ~/work/shoestring; chown $(whoami):$(whoami) ~/work/shoestring
 # - YAMLエラー: head -n 20 ~/work/symbol-bootstrap/target/addresses.yml
 # - yqインストール: sudo snap install yq
@@ -437,14 +439,12 @@ detect_network_and_roles() {
     # ネットワーク検出
     local network_type
     if command -v yq >/dev/null 2>&1; then
-        # yq の出力を一時ファイルに保存してデバッグ
         local yq_output=$(mktemp)
         yq eval '.networkType' "$yml_file" > "$yq_output" 2>> "$SHOESTRING_DIR/setup.log"
         network_type=$(cat "$yq_output")
         log "yq raw output for .networkType: $(cat "$yq_output")" "DEBUG"
         rm -f "$yq_output"
         
-        # network_type が数値か検証
         if [[ "$network_type" =~ ^[0-9]+$ ]]; then
             log "yq network type: $network_type" "DEBUG"
             if [ "$network_type" = "152" ]; then
@@ -457,7 +457,7 @@ detect_network_and_roles() {
             fi
         else
             network_type=""
-            log "Invalid yq output for networkType: $network_type, falling back" "WARNING"
+            log "Invalid yq output for .networkType: $network_type, falling back" "WARNING"
         fi
     else
         log "yq not found, skipping yq network detection" "WARNING"
@@ -485,24 +485,34 @@ detect_network_and_roles() {
     
     # friendlyName と roles 検出
     local friendly_name roles features light_api
-    if command -v yq >/dev/null 2>&1; then
-        friendly_name=$(yq eval '.nodes[0].friendlyName' "$yml_file" 2>> "$SHOESTRING_DIR/setup.log" || echo "testnet2.symbol-mikun.net")
-        roles=$(yq eval '.nodes[0].roles' "$yml_file" 2>> "$SHOESTRING_DIR/setup.log" || echo "Peer,Api")
-        log "yq friendly_name: $friendly_name, roles: $roles" "DEBUG"
+    local config_file="$BOOTSTRAP_DIR/nodes/node/server-config/resources/config-node.properties"
+    if [ -f "$config_file" ]; then
+        friendly_name=$(grep -A 10 '^\[localnode\]' "$config_file" | grep '^friendlyName' | awk -F '=' '{print $2}' | tr -d ' ' 2>/dev/null)
+        roles=$(grep -A 10 '^\[localnode\]' "$config_file" | grep '^roles' | awk -F '=' '{print $2}' | tr -d ' ' 2>/dev/null)
+        log "config-node.properties snippet: $(grep -A 10 '^\[localnode\]' "$config_file" | head -n 15)" "DEBUG"
+        if [ -z "$friendly_name" ]; then
+            log "friendlyName not found in $config_file, falling back to default" "WARNING"
+            friendly_name="mikun-testnet-node"
+        fi
+        if [ -z "$roles" ]; then
+            log "roles not found in $config_file, falling back to default" "WARNING"
+            roles="Peer,Api"
+        fi
     else
-        friendly_name="testnet2.symbol-mikun.net"
+        log "$config_file not found, using defaults" "WARNING"
+        friendly_name="mikun-testnet-node"
         roles="Peer,Api"
-        log "yq not found, using defaults: friendly_name=$friendly_name, roles=$roles" "WARNING"
     fi
+    log "Extracted - friendlyName: $friendly_name, roles: $roles" "DEBUG"
     
-    # friendly_name が null または空の場合、デフォルトを設定
-    if [ -z "$friendly_name" ] || [ "$friendly_name" = "null" ]; then
-        friendly_name="testnet2.symbol-mikun.net"
+    # friendly_name が空の場合、デフォルトを設定
+    if [ -z "$friendly_name" ]; then
+        friendly_name="mikun-testnet-node"
         log "friendly_name set to default: $friendly_name" "INFO"
     fi
     
-    # roles が null または空の場合、デフォルトを設定
-    if [ -z "$roles" ] || [ "$roles" = "null" ]; then
+    # roles が空の場合、デフォルトを設定
+    if [ -z "$roles" ]; then
         roles="Peer,Api"
         log "Roles set to default: $roles" "INFO"
     fi
@@ -550,7 +560,7 @@ setup_shoestring() {
     print_info "検出したホスト: $host_name"
     
     # ネットワーク設定の動的生成
-    local network_config
+    local network_config nodewatch_url
     if [ "$network_type" = "mainnet" ]; then
         network_config=$(cat << EOF
 [network]
@@ -560,6 +570,7 @@ epochAdjustment = 1615853185
 generationHashSeed = 57F7DA205008026C776CB6AED843393F04CD458E0AA2D9F1D5F31A402072B2D6
 EOF
         )
+        nodewatch_url="https://nodewatch.symbol.tools/mainnet"
     else
         network_config=$(cat << EOF
 [network]
@@ -570,6 +581,7 @@ generationHashSeed = 49D6E1CE276A85B70EAFE52349AACCA389302E7A9754BCF1221E79494FC
 EOF
         )
         network_type="sai" # デフォルトは testnet
+        nodewatch_url="https://nodewatch.symbol.tools/testnet"
     fi
     
     # shoestring.ini の初期化
@@ -592,7 +604,7 @@ rest = symbolplatform/symbol-rest:2.5.0
 mongo = mongo:7.0.17
 
 [services]
-nodewatch = https://nodewatch.symbol.tools/testnet
+nodewatch = $nodewatch_url
 
 [transaction]
 feeMultiplier = 200
@@ -633,18 +645,18 @@ EOF
     local overrides_file="$shoestring_subdir/overrides.ini"
     print_info "overrides.ini を生成するよ"
     cat > "$overrides_file" << EOF
-[user.account]
+[account.user]
 enableDelegatedHarvestersAutoDetection = true
 
 [harvesting]
 maxUnlockedAccounts = 5
 beneficiaryAddress =
 
-[node.node]
+[node]
 minFeeMultiplier = 100
 language = ja
 
-[node.localnode]
+[localnode.node]
 host = $host_name
 friendlyName = $friendly_name
 EOF
@@ -684,7 +696,7 @@ EOF
     log "python3 -m shoestring setup --config \"$config_file\" --ca-key-path \"$ca_key_path\" --overrides \"$overrides_file\" --directory \"$SHOESTRING_DIR\" --package $network_type" "DEBUG"
     python3 -m shoestring setup --config "$config_file" --ca-key-path "$ca_key_path" --overrides "$overrides_file" --directory "$SHOESTRING_DIR" --package "$network_type" > "$SHOESTRING_DIR/setup_shoestring.log" 2>&1 || {
         log "setup エラー: $(cat "$SHOESTRING_DIR/setup_shoestring.log")" "ERROR"
-        error_exit "Shoestring ノードのセットアップに失敗"
+        error_exit "Shoestring ノードのセットアップに失敗。ログを確認してね: cat $SHOESTRING_DIR/setup_shoestring.log"
     }
     
     deactivate
