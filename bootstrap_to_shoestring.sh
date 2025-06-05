@@ -16,6 +16,10 @@
 #   - ツール: symbol-bootstrap@1.1.11、symbol-shoestring、yq
 #   - ディスク: 1GB 以上
 #
+# 注意:
+# - shoestring.ini の [node] は DUAL ノード（features = API | HARVESTER, lightApi = false）で固定。
+# - 他のノードタイプ（例：Peer ノード）は、セットアップ後に手動で shoestring.ini を編集。
+#
 # FAQ:
 # - エラー時: setup.log を確認（tail -f ~/work/shoestring/setup.log）
 # - 仮想環境欠落: rm -rf ~/work/shoestring/shoestring-env; python3 -m venv ~/work/shoestring/shoestring-env
@@ -200,6 +204,8 @@ install_dependencies() {
         pip list > "$SHOESTRING_DIR/pip_list.log" 2>&1
         if grep -q symbol-shoestring "$SHOESTRING_DIR/pip_list.log"; then
             print_info "symbol-shoestring インストール済み: $(grep symbol-shoestring "$SHOESTRING_DIR/pip_list.log")"
+            local shoestring_version=$(pip show symbol-shoestring | grep Version | awk '{print $2}')
+            log "symbol-shoestring version: $shoestring_version" "INFO"
         else
             log "pip list: $(cat "$SHOESTRING_DIR/pip_list.log")" "DEBUG"
             error_exit "symbol-shoestring が未インストール。インストールコマンド: pip install symbol-shoestring"
@@ -209,9 +215,9 @@ install_dependencies() {
         if [ -f "$main_py" ]; then
             cp "$main_py" "$main_py.bak"
             sed -i 's/\t/    /g' "$main_py" 2>> "$SHOESTRING_DIR/setup.log"
-            local line_num=$(grep -n '^ *[[:space:]]*lang = gettext.translation.*messages' "$main_py" | cut -d: -f1)
+            local line_num=$(grep -n 'lang = gettext.translation' "$main_py" | cut -d: -f1 | head -n 1)
             if [ -n "$line_num" ]; then
-                sed -i "${line_num}d" "$main_py" 2>> "$SHOESTRING_DIR/setup.log"
+                sed -i "${line_num},$((line_num+2))d" "$main_py" 2>> "$SHOESTRING_DIR/setup.log"
                 sed -i "${line_num}i\    try:" "$main_py" 2>> "$SHOESTRING_DIR/setup.log"
                 sed -i "${line_num}a\        lang = gettext.translation('messages', localedir=lang_directory, languages=(os.getenv('LC_MESSAGES', 'en_US').split('.')[0], 'en'))" "$main_py" 2>> "$SHOESTRING_DIR/setup.log"
                 sed -i "${line_num}a\        lang.install()" "$main_py" 2>> "$SHOESTRING_DIR/setup.log"
@@ -219,7 +225,7 @@ install_dependencies() {
                 sed -i "${line_num}a\        gettext.install('messages')" "$main_py" 2>> "$SHOESTRING_DIR/setup.log"
             else
                 log "lang = gettext.translation が見つからない: $(cat "$main_py" | grep -A 5 'lang')" "ERROR"
-                error_exit "翻訳エラー回避コードの適用に失敗。$main_py を確認してね"
+                error_exit "翻訳エラー回避コードの適用に失敗。$main_py を確認してね: cat $main_py"
             fi
             log "翻訳エラー回避コード適用後: $(grep -A 10 'try:' "$main_py" | head -n 15)" "DEBUG"
             if ! python3 -m py_compile "$main_py" >> "$SHOESTRING_DIR/py_compile.log" 2>&1; then
@@ -227,7 +233,7 @@ install_dependencies() {
                 cp "$main_py.bak" "$main_py"
                 log "翻訳エラー回避コード適用失敗: $(cat "$main_py" | grep -A 10 'lang =')" "ERROR"
                 log "py_compile エラー: $(cat "$SHOESTRING_DIR/py_compile.log")" "ERROR"
-                error_exit "翻訳エラー回避コードの適用に失敗。手動で修正してね: $main_py"
+                error_exit "翻訳エラー回避コードの適用に失敗。手動で修正してね: cat $main_py"
             fi
             if grep -q "gettext.install('messages')" "$main_py"; then
                 print_info "翻訳エラー回避コードを適用したよ！"
@@ -236,6 +242,7 @@ install_dependencies() {
             fi
         else
             print_warning "翻訳エラー回避コードの適用に失敗。ファイルが見つからないよ: $main_py"
+            error_exit "shoestring の __main__.py が見つからない。pip install symbol-shoestring を再実行してね"
         fi
         deactivate
     fi
@@ -481,28 +488,22 @@ detect_network_and_roles() {
         log "Network type set to default: $network_type" "INFO"
     fi
     
-    # friendlyName と roles 検出
-    local friendly_name roles features light_api
+    # friendlyName 検出
+    local friendly_name
     local config_file="$BOOTSTRAP_DIR/nodes/node/server-config/resources/config-node.properties"
     if [ -f "$config_file" ]; then
         print_info "Extracting friendlyName from $config_file"
         friendly_name=$(grep -A 10 '^\[localnode\]' "$config_file" | grep '^friendlyName' | awk -F '=' '{print $2}' | tr -d ' ' 2>/dev/null)
-        roles=$(grep -A 10 '^\[localnode\]' "$config_file" | grep '^roles' | awk -F '=' '{print $2}' | tr -d ' ' 2>/dev/null)
         log "config-node.properties snippet: $(grep -A 10 '^\[localnode\]' "$config_file" | head -n 15)" "DEBUG"
         if [ -z "$friendly_name" ]; then
             log "friendlyName not found in $config_file, falling back to default" "WARNING"
             friendly_name="mikun-testnet-node"
         fi
-        if [ -z "$roles" ]; then
-            log "roles not found in $config_file, falling back to default" "WARNING"
-            roles="Peer,Api"
-        fi
     else
-        log "$config_file not found, using defaults" "WARNING"
+        log "$config_file not found, using default" "WARNING"
         friendly_name="mikun-testnet-node"
-        roles="Peer,Api"
     fi
-    log "Extracted - friendlyName: $friendly_name, roles: $roles" "DEBUG"
+    log "Extracted - friendlyName: $friendly_name" "DEBUG"
     
     # friendly_name が空の場合、デフォルトを設定
     if [ -z "$friendly_name" ]; then
@@ -510,27 +511,8 @@ detect_network_and_roles() {
         log "friendly_name set to default: $friendly_name" "INFO"
     fi
     
-    # roles が空の場合、デフォルトを設定
-    if [ -z "$roles" ]; then
-        roles="Peer,Api"
-        log "Roles set to default: $roles" "INFO"
-    fi
-    
-    # roles を features に変換
-    if [[ "$roles" == *"Peer"* ]] && [[ "$roles" == *"Api"* ]]; then
-        features="API | HARVESTER"
-        light_api="false" # dual ノード
-    elif [[ "$roles" == *"Peer"* ]]; then
-        features="HARVESTER"
-        light_api="false" # peer ノード
-    else
-        features="API | HARVESTER" # 安全なデフォルト
-        light_api="false"
-        log "Unknown roles '$roles', using default features: $features" "WARNING"
-    fi
-    
-    # features をクォートで保護
-    echo "$network_type \"$friendly_name\" \"$features\" $light_api"
+    # 出力
+    echo "$network_type $friendly_name"
 }
 
 # Shoestring ノードのセットアップ
@@ -546,12 +528,10 @@ setup_shoestring() {
     fix_dir_permissions "$shoestring_subdir"
     
     # ネットワークとノード情報検出
-    local network_type friendly_name features light_api
-    IFS=' ' read -r network_type friendly_name features light_api <<< "$(detect_network_and_roles "$ADDRESSES_YML")"
-    # クォートを除去
-    friendly_name=${friendly_name//\"/}
-    features=${features//\"/}
-    print_info "検出したネットワーク: $network_type, ノード名: $friendly_name, features: $features, lightApi: $light_api"
+    local network_type friendly_name
+    IFS=' ' read -r network_type friendly_name <<< "$(detect_network_and_roles "$ADDRESSES_YML")"
+    print_info "検出したネットワーク: $network_type, ノード名: $friendly_name"
+    log "Parsed - network_type: $network_type, friendly_name: $friendly_name" "DEBUG"
     
     # ホスト抽出
     local host_name
@@ -723,6 +703,7 @@ show_post_migration_guide() {
     echo "  1. ディレクトリに移動: cd $SHOESTRING_DIR"
     echo "  2. Docker Compose で起動: docker-compose up -d"
     echo "  3. ログを確認: docker-compose logs -f"
+    print_info "ノードタイプを変更したい場合: nano $SHOESTRING_DIR/shoestring-env/shoestring.ini で [node] の features や lightApi を編集"
     print_info "ログの詳細は確認: tail -f $SHOESTRING_DIR/setup.log"
     print_info "困ったらサポート: https://x.com/mikunNEM"
 }
