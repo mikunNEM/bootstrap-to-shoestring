@@ -1,7 +1,5 @@
 #!/bin/bash
 
-#!/bin/bash
-
 # bootstrap_to_shoestring.sh - Symbol Bootstrap から Shoestring への移行スクリプト
 # 誰でも簡単に移行！依存自動インストール、権限エラー解決、初心者向けガイダンス付き。
 #
@@ -487,6 +485,7 @@ detect_network_and_roles() {
     local friendly_name roles features light_api
     local config_file="$BOOTSTRAP_DIR/nodes/node/server-config/resources/config-node.properties"
     if [ -f "$config_file" ]; then
+        print_info "Extracting friendlyName from $config_file"
         friendly_name=$(grep -A 10 '^\[localnode\]' "$config_file" | grep '^friendlyName' | awk -F '=' '{print $2}' | tr -d ' ' 2>/dev/null)
         roles=$(grep -A 10 '^\[localnode\]' "$config_file" | grep '^roles' | awk -F '=' '{print $2}' | tr -d ' ' 2>/dev/null)
         log "config-node.properties snippet: $(grep -A 10 '^\[localnode\]' "$config_file" | head -n 15)" "DEBUG"
@@ -607,8 +606,8 @@ mongo = mongo:7.0.17
 nodewatch = $nodewatch_url
 
 [transaction]
-feeMultiplier = 200
-timeoutHours = 1
+feeMultiplier = 100
+timeoutHours = 2
 minCosignaturesCount = 0
 hashLockDuration = 1440
 currencyMosaicId = 0x72C0212E67A08BCE
@@ -645,17 +644,21 @@ EOF
     local overrides_file="$shoestring_subdir/overrides.ini"
     print_info "overrides.ini を生成するよ"
     cat > "$overrides_file" << EOF
+# User account settings
 [account.user]
 enableDelegatedHarvestersAutoDetection = true
 
+# Harvesting settings
 [harvesting]
 maxUnlockedAccounts = 5
 beneficiaryAddress =
 
+# Node settings
 [node]
 minFeeMultiplier = 100
 language = ja
 
+# Local node settings
 [localnode.node]
 host = $host_name
 friendlyName = $friendly_name
@@ -713,9 +716,13 @@ show_post_migration_guide() {
     echo "  📜 ログ: $SHOESTRING_DIR/setup.log"
     echo "  📜 設定: $SHOESTRING_DIR/shoestring-env/shoestring.ini"
     echo "  📜 上書き設定: $SHOESTRING_DIR/shoestring/overrides.ini"
+    echo "  🐳 Docker Compose: $SHOESTRING_DIR/docker-compose.yml"
     echo
     print_warning "ca.key.pem は安全な場所にバックアップしてね！"
-    print_info "ノードを起動するには: cd $SHOESTRING_DIR && docker-compose up -d"
+    print_info "ノードを起動するには:"
+    echo "  1. ディレクトリに移動: cd $SHOESTRING_DIR"
+    echo "  2. Docker Compose で起動: docker-compose up -d"
+    echo "  3. ログを確認: docker-compose logs -f"
     print_info "ログの詳細は確認: tail -f $SHOESTRING_DIR/setup.log"
     print_info "困ったらサポート: https://x.com/mikunNEM"
 }
