@@ -2,6 +2,9 @@
 
 # utils.sh - bootstrap_to_shoestring.sh のための便利な関数
 # ログ、環境チェック、YAML 解析、ユーザー対話を管理します。
+#
+# 作成者: mikun (@mikunNEM, 2025-06-05)
+# バージョン: 2025-06-07-v5
 
 set -e
 
@@ -82,9 +85,7 @@ ask_user() {
             continue
         fi
         if [ "$is_path" = "path" ]; then
-            if [[ "$response" =~ ^~(/|$| ) ]]; then
-                response="${response/#\~/$HOME}"
-            fi
+            response=$(expand_tilde "$response")
             if [[ ! "$response" =~ ^/ ]]; then
                 response="$(pwd)/$response"
             fi
@@ -98,6 +99,19 @@ ask_user() {
         log "ユーザー入力: 質問='$question', 回答='$response'" "DEBUG"
         break
     done
+}
+
+# チルダ展開
+expand_tilde() {
+    local response="$1"
+    if [[ -n "$response" ]]; then
+        log "Tilde expansion before: $response" "DEBUG"
+        response="${response/#~/$HOME}"
+        log "Tilde expansion after: $response" "DEBUG"
+    else
+        log "Tilde expansion skipped: empty response" "DEBUG"
+    fi
+    echo "$response"
 }
 
 # 確認プロンプト
@@ -252,4 +266,4 @@ check_utils() {
     log "Environment check completed" "DEBUG"
 }
 
-export -f log error_exit print_success print_warning print_info ask_user confirm check_command parse_yaml validate_file validate_dir check_disk_space check_python_version check_venv check_write_permission rotate_log check_utils
+export -f log error_exit print_success print_warning print_info ask_user expand_tilde confirm check_command parse_yaml validate_file validate_dir check_disk_space check_python_version check_venv check_write_permission rotate_log check_utils
