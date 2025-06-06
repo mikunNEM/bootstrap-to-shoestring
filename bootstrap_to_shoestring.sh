@@ -426,11 +426,6 @@ validate_ini() {
         log "INI 検証エラー: $(cat "$SHOESTRING_DIR/validate_ini.log")" "ERROR"
         error_exit "$ini_file の形式が不正だよ。内容を確認してね: cat $ini_file"
     }
-    # ドット形式のセクション名をチェック
-    if grep -q '^\[.*\]' "$ini_file" && grep '^\[.*\]' "$ini_file" | grep -qv '\.'; then
-        log "Invalid section names: $(grep '^\[.*\]' "$ini_file" | grep -v '\.')" "ERROR"
-        error_exit "Invalid section name in $ini_file: must be [category.subcategory]"
-    fi
     print_info "$ini_file の形式はOK！"
 }
 
