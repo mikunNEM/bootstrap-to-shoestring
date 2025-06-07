@@ -35,6 +35,22 @@
 # 作成者: mikun (@mikunNEM, 2025-06-07)
 # バージョン: 2025-06-07-v20
 
+# --- Ubuntu バージョンチェック & アップグレード案内 ---
+if [ -f /etc/os-release ]; then
+  . /etc/os-release
+  if [[ "$ID" == "ubuntu" && "${VERSION_ID%%.*}" -eq 20 ]]; then
+    echo -e "\e[33m⚠️ 現在の Ubuntu バージョンは $VERSION_ID です。\e[0m"
+    echo "Symbol ノードを停止して、Ubuntu 20 → 22.04 にアップグレードしてから再度このスクリプトを実行してください。"
+    echo
+    echo "  1. ノード停止: cd \$BOOTSTRAP_DIR && docker-compose down"
+    echo "  2. システムアップグレード:"
+    echo "       sudo apt update && sudo apt upgrade -y"
+    echo "       sudo do-release-upgrade -d"
+    echo "  3. サーバー再起動後、再ログインしてこのスクリプトを再実行"
+    exit 1
+  fi
+fi
+
 set -eu
 
 source "$(dirname "$0")/utils.sh"
