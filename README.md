@@ -1,7 +1,4 @@
-# bootstrap-to-shoestring
-Script for migrating from symbol bootstrap to shoestring
-
-# Shoestring 移行スクリプト利用手順
+# Bootstrap to Shoestring 移行スクリプト利用手順
 
 このマニュアルでは、サーバー上で **Symbol Bootstrap から Shoestring への移行スクリプト** を実行するための手順を説明します。
 
@@ -38,7 +35,7 @@ Script for migrating from symbol bootstrap to shoestring
 
 ```bash
 chmod +x bootstrap_to_shoestring.sh utils.sh
-
+```
 
 ## 3. スクリプトの実行
 
@@ -46,11 +43,6 @@ chmod +x bootstrap_to_shoestring.sh utils.sh
 
 ```bash
 ./bootstrap_to_shoestring.sh
-
-オプション -y を付けると、すべての確認をスキップして自動実行します（上級者向け）。
-
-```bash
-./bootstrap_to_shoestring.sh -y
-
+```
 
 
