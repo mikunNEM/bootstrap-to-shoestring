@@ -22,8 +22,10 @@ log() {
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     local log_file="${SHOESTRING_DIR:-$HOME/work/shoestring}/setup.log"
     mkdir -p "$(dirname "$log_file")" 2>/dev/null || true
-    echo "[$timestamp] [$level] $message" >> "$log_file" 2>/dev/null
-    echo "[$timestamp] [$level] $message" >&2
+    # 特殊文字をエスケープ
+    local escaped_message=$(printf '%s' "$message" | sed 's/["$`\\]/\\&/g')
+    echo "[$timestamp] [$level] $escaped_message" >> "$log_file" 2>/dev/null
+    echo "[$timestamp] [$level] $escaped_message" >&2
 }
 
 # エラーで終了する関数
@@ -95,7 +97,7 @@ ask_user() {
                 continue
             fi
         fi
-        printf "%s" "$response" > /dev/stdout
+        printf "%s" "$response"
         log "ユーザー入力: 質問='$question', 回答='$response'" "DEBUG"
         break
     done
@@ -149,7 +151,6 @@ parse_yaml() {
     fi
     log "parse_yaml: ファイル=$file, キー=$key" "DEBUG"
     
-    # yq を使用（優先）
     if command -v yq &>/dev/null; then
         local result=$(yq eval ".nodes[0].${key}.privateKey" "$file" 2>> "${SHOESTRING_DIR:-$HOME/work/shoestring}/setup.log")
         if [[ "$result" != "null" && -n "$result" ]]; then
@@ -162,8 +163,7 @@ parse_yaml() {
         log "yq 未インストール、grep にフォールバック" "DEBUG"
     fi
     
-    # grep と sed でフォールバック
-    local line=$(grep -A 10 "^[[:space:]]*${key}:" "$file" | grep privateKey | head -n 1 | sed -e "s/^[[:space:]]*privateKey:[[:space:]]*//" -e "s/[[:space:]]*$//")
+    local line=$(grep -A 10 "^[[:space:]]*${key}:" "$file" | grep privateKey | head -n 1 | sed -e 's/^[[:space:]]*privateKey:[[:space:]]*//' -e 's/[[:space:]]*$//')
     log "grep 結果: $line" "DEBUG"
     if [[ -n "$line" ]]; then
         echo "$line"
