@@ -129,6 +129,7 @@ install_dependencies() {
             ubuntu|debian)
                 retry_command "sudo apt update"
                 retry_command "sudo apt install -y python3 python3-pip python3-venv"
+                retry_command "sudo apt install -y python3-dev build-essential libssl-dev"
                 ;;
             centos)
                 retry_command "sudo yum install -y python3 python3-pip"
