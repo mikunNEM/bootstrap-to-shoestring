@@ -520,45 +520,51 @@ copy_data() {
         cd "$SHOESTRING_DIR/shoestring" && sudo docker-compose down >> "$SHOESTRING_DIR/data_copy.log" 2>&1 || print_warning "Shoestring のノードに失敗したけど、続行するよ"
     fi
     
-    # データベースコピー
-    if [ -d "$src_db" ]; then
-        mkdir -p "$dest_db" || error_exit "$dest_db の作成に失敗"
-        fix_dir_permissions "$dest_db"
-        if command -v pv >/dev/null 2>&1; then
-            echo -e "${YELLOW}データベースコピー中... sudo のパスワードを入力してね:${NC}"
-            print_info "データベース（db）をコピー中（進捗はログで確認: $SHOESTRING_DIR/data_copy.log）..."
-            sudo tar cf - -C "$src_db" . | pv >> "$SHOESTRING_DIR/data_copy.log" 2>&1 | sudo tar xf - -C "$dest_db" >> "$SHOESTRING_DIR/data_copy.log" 2>&1 || error_exit "データベースのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
-            print_info "データコピー完了！"
-        else
-            echo -e "${YELLOW}データベースコピー中... sudo のパスワードを入力してね:${NC}"
-            print_info "データベース（db）をコピー中（進捗なし）..."
-            sudo cp -rf "$src_db"/* "$dest_db"/ >> "$SHOESTRING_DIR/data_copy.log" 2>&1 || error_exit "データベースのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
-            print_info "データコピー完了！"
-        fi
-        print_info "データベースをコピーしたよ: $dest_db"
-    else
-        print_warning "データベースが見つからないよ: $src_db。コピーはスキップするけど、ノードは新規同期が必要かも。"
-    fi
-    
-    # データコピー
-    if [ -d "$src_data" ]; then
-        mkdir -p "$dest_data" || error_exit "$dest_data の作成に失敗"
-        fix_dir_permissions "$dest_data"
-        if command -v pv >/dev/null 2>&1; then
-            echo -e "${YELLOW}データコピー中... sudo のパスワードを入力してね:${NC}"
-            print_info "データコピー中（進捗はログで確認: $SHOESTRING_DIR/data_copy.log）..."
-            sudo tar cf - -C "$src_data" . | pv >> "$SHOESTRING_DIR/data_copy.log" 2>&1 | sudo tar xf - -C "$dest_data" >> "$SHOESTRING_DIR/data_copy.log" 2>&1 || error_exit "データのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
-            print_info "データコピー完了！"
-        else
-            echo -e "${YELLOW}データコピー中...でも、sudo cp -rfのパスワードが必要だよ...:${NC}"
-            print_info "データコピー（data）中（進捗なし）..."
-            sudo cp -r "$src_data"/* "$dest_data"/ >> "$SHOESTRING_DIR/data_copy.log" 2>&1 || error_exit "データのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
-            print_info "データコピー完了！"
-        fi
-        print_info "データをコピーしたよ: $dest_data"
-    else
-        print_warning "データが見つからないよ: $src_data。コピーはスキップするけど、ノードは新規同期が必要。"
-    fi
+# データベースコピー
+if [ -d "$src_db" ]; then
+  mkdir -p "$dest_db" || error_exit "$dest_db の作成に失敗"
+  fix_dir_permissions "$dest_db"
+  if command -v pv >/dev/null 2>&1; then
+    echo -e "${YELLOW}データベースコピー中... sudo のパスワードを入力してね:${NC}"
+    print_info "データベース（db）をコピー中（進捗は画面に表示、詳細はログ: $SHOESTRING_DIR/data_copy.log）…"
+    # ─── ここがポイント ───
+    sudo tar -C "$src_db" -cf - . 2>>"$SHOESTRING_DIR/data_copy.log" \
+      | pv \
+      | sudo tar -C "$dest_db" -xf - 2>>"$SHOESTRING_DIR/data_copy.log" \
+      || error_exit "データベースのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
+    print_info "データベースコピー完了！"
+  else
+    sudo cp -a "$src_db/." "$dest_db/" 2>>"$SHOESTRING_DIR/data_copy.log" \
+      || error_exit "データベースコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
+    print_info "データベースコピー完了！（進捗なし）"
+  fi
+  print_info "データベースをコピーしたよ: $dest_db"
+else
+  print_warning "データベースが見つからないよ: $src_db。コピーはスキップ。"
+fi
+
+# 生チェーンデータコピー（src_data → dest_data）も同様に
+if [ -d "$src_data" ]; then
+  mkdir -p "$dest_data" || error_exit "$dest_data の作成に失敗"
+  fix_dir_permissions "$dest_data"
+  if command -v pv >/dev/null 2>&1; then
+    echo -e "${YELLOW}チェーンデータコピー中... sudo のパスワードを入力してね:${NC}"
+    print_info "チェーンデータをコピー中（進捗は画面に表示）…"
+    sudo tar -C "$src_data" -cf - . 2>>"$SHOESTRING_DIR/data_copy.log" \
+      | pv \
+      | sudo tar -C "$dest_data" -xf - 2>>"$SHOESTRING_DIR/data_copy.log" \
+      || error_exit "チェーンデータのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
+    print_info "チェーンデータコピー完了！"
+  else
+    sudo cp -a "$src_data/." "$dest_data/" 2>>"$SHOESTRING_DIR/data_copy.log" \
+      || error_exit "チェーンデータコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
+    print_info "チェーンデータコピー完了！（進捗なし）"
+  fi
+  print_info "データをコピーしたよ: $dest_data"
+else
+  print_warning "データが見つからないよ: $src_data。コピーはスキップ。"
+fi
+
 }
 
 # Shoestring tồセットアップ
