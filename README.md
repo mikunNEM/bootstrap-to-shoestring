@@ -22,7 +22,9 @@
     ```bash
     # bootstrap_to_shoestring.sh をダウンロード
     curl -O https://raw.githubusercontent.com/mikunNEM/bootstrap-to-shoestring/main/bootstrap_to_shoestring.sh
-
+    ```
+    
+    ```bash
     # utils.sh をダウンロード
     curl -O https://raw.githubusercontent.com/mikunNEM/bootstrap-to-shoestring/main/utils.sh
     ```
