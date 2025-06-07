@@ -14,7 +14,7 @@
 1. `shoestring` フォルダへ移動します。
 
     ```bash
-    cd ~/work/shoestring/shoestring
+    cd ~/work/shoestring/
     ```
 
 2. GitHub リポジトリからスクリプト本体とユーティリティファイルを取得します。
