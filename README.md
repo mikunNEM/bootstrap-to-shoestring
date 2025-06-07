@@ -20,12 +20,12 @@
 2. GitHub リポジトリからスクリプト本体とユーティリティファイルを取得します。
 
     
-    bootstrap_to_shoestring.sh をダウンロード
+    `bootstrap_to_shoestring.sh` をダウンロード
     ```bash
     curl -O https://raw.githubusercontent.com/mikunNEM/bootstrap-to-shoestring/main/bootstrap_to_shoestring.sh
     ```
     
-    utils.sh をダウンロード
+    `utils.sh` をダウンロード
     ```bash
     curl -O https://raw.githubusercontent.com/mikunNEM/bootstrap-to-shoestring/main/utils.sh
     ```
