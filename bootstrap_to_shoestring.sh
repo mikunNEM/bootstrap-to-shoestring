@@ -477,7 +477,7 @@ check_node_key() {
     )
     for path in "${node_key_paths[@]}"; do
         if [ -f "$path" ]; then
-            print_info "Bootstrap の node.key.pem を見つけました: $path
+            print_info "Bootstrap の node.key.pem を見つけました: $path"
             NODE_KEY_FOUND=true
             return
         fi
@@ -520,45 +520,51 @@ copy_data() {
         cd "$SHOESTRING_DIR/shoestring" && sudo docker-compose down >> "$SHOESTRING_DIR/data_copy.log" 2>&1 || print_warning "Shoestring のノードに失敗したけど、続行するよ"
     fi
     
-    # データベースコピー
-    if [ -d "$src_db" ]; then
-        mkdir -p "$dest_db" || error_exit "$dest_db の作成に失敗"
-        fix_dir_permissions "$dest_db"
-        if command -v pv >/dev/null 2>&1; then
-            echo -e "${YELLOW}データベースコピー中... sudo のパスワードを入力してね:${NC}"
-            print_info "データベース（db）をコピー中（進捗はログで確認: $SHOESTRING_DIR/data_copy.log）..."
-            sudo tar cf - -C "$src_db" . | pv >> "$SHOESTRING_DIR/data_copy.log" 2>&1 | sudo tar xf - -C "$dest_db" >> "$SHOESTRING_DIR/data_copy.log" 2>&1 || error_exit "データベースのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
-            print_info "データコピー完了！"
-        else
-            echo -e "${YELLOW}データベースコピー中... sudo のパスワードを入力してね:${NC}"
-            print_info "データベース（db）をコピー中（進捗なし）..."
-            sudo cp -rf "$src_db"/* "$dest_db"/ >> "$SHOESTRING_DIR/data_copy.log" 2>&1 || error_exit "データベースのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
-            print_info "データコピー完了！"
-        fi
-        print_info "データベースをコピーしたよ: $dest_db"
-    else
-        print_warning "データベースが見つからないよ: $src_db。コピーはスキップするけど、ノードは新規同期が必要かも。"
-    fi
-    
-    # データコピー
-    if [ -d "$src_data" ]; then
-        mkdir -p "$dest_data" || error_exit "$dest_data の作成に失敗"
-        fix_dir_permissions "$dest_data"
-        if command -v pv >/dev/null 2>&1; then
-            echo -e "${YELLOW}データコピー中... sudo のパスワードを入力してね:${NC}"
-            print_info "データコピー中（進捗はログで確認: $SHOESTRING_DIR/data_copy.log）..."
-            sudo tar cf - -C "$src_data" . | pv >> "$SHOESTRING_DIR/data_copy.log" 2>&1 | sudo tar xf - -C "$dest_data" >> "$SHOESTRING_DIR/data_copy.log" 2>&1 || error_exit "データのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
-            print_info "データコピー完了！"
-        else
-            echo -e "${YELLOW}データコピー中...でも、sudo cp -rfのパスワードが必要だよ...:${NC}"
-            print_info "データコピー（data）中（進捗なし）..."
-            sudo cp -r "$src_data"/* "$dest_data"/ >> "$SHOESTRING_DIR/data_copy.log" 2>&1 || error_exit "データのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
-            print_info "データコピー完了！"
-        fi
-        print_info "データをコピーしたよ: $dest_data"
-    else
-        print_warning "データが見つからないよ: $src_data。コピーはスキップするけど、ノードは新規同期が必要。"
-    fi
+# データベースコピー
+if [ -d "$src_db" ]; then
+  mkdir -p "$dest_db" || error_exit "$dest_db の作成に失敗"
+  fix_dir_permissions "$dest_db"
+  if command -v pv >/dev/null 2>&1; then
+    echo -e "${YELLOW}データベースコピー中... sudo のパスワードを入力してね:${NC}"
+    print_info "データベース（db）をコピー中（進捗は画面に表示、詳細はログ: $SHOESTRING_DIR/data_copy.log）…"
+    # ─── ここがポイント ───
+    sudo tar -C "$src_db" -cf - . 2>>"$SHOESTRING_DIR/data_copy.log" \
+      | pv \
+      | sudo tar -C "$dest_db" -xf - 2>>"$SHOESTRING_DIR/data_copy.log" \
+      || error_exit "データベースのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
+    print_info "データベースコピー完了！"
+  else
+    sudo cp -a "$src_db/." "$dest_db/" 2>>"$SHOESTRING_DIR/data_copy.log" \
+      || error_exit "データベースコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
+    print_info "データベースコピー完了！（進捗なし）"
+  fi
+  print_info "データベースをコピーしたよ: $dest_db"
+else
+  print_warning "データベースが見つからないよ: $src_db。コピーはスキップ。"
+fi
+
+# 生チェーンデータコピー（src_data → dest_data）も同様に
+if [ -d "$src_data" ]; then
+  mkdir -p "$dest_data" || error_exit "$dest_data の作成に失敗"
+  fix_dir_permissions "$dest_data"
+  if command -v pv >/dev/null 2>&1; then
+    echo -e "${YELLOW}チェーンデータコピー中... sudo のパスワードを入力してね:${NC}"
+    print_info "チェーンデータをコピー中（進捗は画面に表示）…"
+    sudo tar -C "$src_data" -cf - . 2>>"$SHOESTRING_DIR/data_copy.log" \
+      | pv \
+      | sudo tar -C "$dest_data" -xf - 2>>"$SHOESTRING_DIR/data_copy.log" \
+      || error_exit "チェーンデータのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
+    print_info "チェーンデータコピー完了！"
+  else
+    sudo cp -a "$src_data/." "$dest_data/" 2>>"$SHOESTRING_DIR/data_copy.log" \
+      || error_exit "チェーンデータコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
+    print_info "チェーンデータコピー完了！（進捗なし）"
+  fi
+  print_info "データをコピーしたよ: $dest_data"
+else
+  print_warning "データが見つからないよ: $src_data。コピーはスキップ。"
+fi
+
 }
 
 # Shoestring tồセットアップ
@@ -580,7 +586,7 @@ setup_shoestring() {
     
     # ホスト抽出
     local host_name
-    host_name=$(extract_host)"
+    host_name=$(extract_host)
     print_info "検出したホスト: $host_name"
     
     # shoestring.ini の初期化
@@ -686,19 +692,19 @@ setup_shoestring() {
         print_info "既存の overrides.ini をバックアップ: $overrides_file.bak-$(date +%Y%m%d_%H%M%S)"
     fi
     cat > "$overrides_file" << EOF
-[user.account]
-enableDelegatedHarvestersAutoDetection = true
+    [user.account]
+    enableDelegatedHarvestersAutoDetection = true
 
-[harvesting.harvesting]
-maxUnlockedAccounts = 5
-beneficiaryAddress = 
+    [harvesting.harvesting]
+    maxUnlockedAccounts = 5
+    beneficiaryAddress = 
 
-[node.node]
-minFeeMultiplier = 100
+    [node.node]
+    minFeeMultiplier = 100
 
-[node.localnode]
-host = $host_name
-friendlyName = $friendly_name
+    [node.localnode]
+    host = $host_name
+    friendlyName = $friendly_name
 EOF
     log "overrides.ini 内容: $(cat "$overrides_file" | sed 's/["`/]/\\&/g')" "DEBUG"
     validate_ini "$overrides_file"
@@ -718,6 +724,8 @@ EOF
     # ノード起動
     print_info "Shoestring ノードを起動するよ"
     cd "$shoestring_subdir" || error_exit "ディレクトリ移動に失敗したよ: $shoestring_subdir"
+    print_info "Docker の古いリソースをクリアするよ(ネットワーク競合を回避)"
+    docker system prune -a --volumes --force >> "$SHOESTRING_DIR/docker_cleanup.log" 2>&1
     docker-compose up -d > "$SHOESTRING_DIR/docker_compose.log" 2>&1 || error_exit "Shoestring ノードの起動に失敗。ログを確認してね: cat $SHOESTRING_DIR/docker_compose.log"
     print_info "Shoestring ノードを起動したよ！"
     
