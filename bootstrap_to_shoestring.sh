@@ -127,9 +127,21 @@ install_dependencies() {
         print_warning "Python3 が見つからないよ。インストールするね！"
         case $os_name in
             ubuntu|debian)
+                #retry_command "sudo apt update"
+                #retry_command "sudo apt install -y python3 python3-pip python3-venv"
+                #retry_command "sudo apt install -y python3-dev build-essential libssl-dev"
+                
+                # deadsnakes PPA から Python 3.12 を導入
                 retry_command "sudo apt update"
-                retry_command "sudo apt install -y python3 python3-pip python3-venv"
-                retry_command "sudo apt install -y python3-dev build-essential libssl-dev"
+                retry_command "sudo apt install -y software-properties-common"
+                retry_command "sudo add-apt-repository --yes ppa:deadsnakes/ppa"
+                retry_command "sudo apt update"
+                # Python 3.12 本体＋venv/dev/distutils 一式
+                retry_command "sudo apt install -y python3.12 python3.12-venv python3.12-dev python3.12-distutils"
+                # pip は get-pip.py でインストール
+                retry_command "curl -sS https://bootstrap.pypa.io/get-pip.py | sudo python3.12"
+                # ビルドツール
+                retry_command "sudo apt install -y build-essential libssl-dev"
                 ;;
             centos)
                 retry_command "sudo yum install -y python3 python3-pip"
