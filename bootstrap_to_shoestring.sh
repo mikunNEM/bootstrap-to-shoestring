@@ -503,8 +503,8 @@ check_disk_space() {
 copy_data() {
     local src_db="$BOOTSTRAP_DIR/databases/db"
     local src_data="$BOOTSTRAP_DIR/nodes/node/data"
-    local dest_db="$SHOESTRING_DIR/dbdata"
-    local dest_data="$SHOESTRING_DIR/data"
+    local dest_db="$SHOESTRING_DIR/shoestring/dbdata"
+    local dest_data="$SHOESTRING_DIR/shoestring/data"
     
     print_info "Bootstrap のデータベースとデータをコピーするよ（再同期を回避！）"
     
