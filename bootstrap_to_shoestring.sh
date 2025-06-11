@@ -54,7 +54,7 @@ set -eu
 source "$(dirname "$0")/utils.sh"
 
 # スクリプトバージョン
-SCRIPT_VERSION="2025-06-11-v24" # 更新されたバージョン
+SCRIPT_VERSION="2025-06-11-v25" # 更新されたバージョン
 
 # グローバル変数
 SHOESTRING_DIR=""
@@ -132,6 +132,11 @@ retry_command() {
             ((attempt++))
         fi
     done
+    # apt-get update の場合、command-not-found エラーは無視して続行
+    if [[ "$cmd" == *"apt-get update"* ]] && grep -q "command-not-found" "$SHOESTRING_DIR/setup.log"; then
+        print_warning "apt-get update で command-not-found エラーが発生しましたが、続行します。"
+        return 0
+    fi
     error_exit "コマンドに失敗: $cmd。ログを確認してください: cat $SHOESTRING_DIR/setup.log"
 }
 
@@ -153,6 +158,8 @@ install_dependencies() {
   if [[ $os_name == "ubuntu" || $os_name == "debian" ]]; then
     print_info "APT ロックファイルをチェックして削除..."
     check_apt_locks
+    # python3-apt をインストール（apt_pkg エラー対策）
+    retry_command "sudo apt-get install -y python3-apt"
     retry_command "sudo apt-get update"
     retry_command "sudo apt-get install -y software-properties-common"
     retry_command "sudo add-apt-repository --yes ppa:deadsnakes/ppa"
@@ -579,18 +586,18 @@ copy_data() {
       fix_dir_permissions "$dest_db"
       if command -v pv >/dev/null 2>&1; then
         echo -e "${YELLOW}データベースコピー中... sudo のパスワードを入力してね:${NC}"
-        print_info "データベース（db）をコピー中（進捗は画面に表示、詳細はログ: $SHOESTRING_DIR/data_copy.log）…"
+        print_info "データベース（db）をコピー中（進捗は画面に表示、詳細はログ: cat $SHOESTRING_DIR/data_copy.log）"
         sudo tar -C "$src_db" -cf - . 2>>"$SHOESTRING_DIR/data_copy.log" \
           | pv \
           | sudo tar -C "$dest_db" -xf - 2>>"$SHOESTRING_DIR/data_copy.log" \
-          || error_exit "データベースのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
+          || error_exit "データベースに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
         print_info "データベースコピー完了！"
       else
         sudo cp -a "$src_db/." "$dest_db/" 2>>"$SHOESTRING_DIR/data_copy.log" \
           || error_exit "データベースコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
         print_info "データベースコピー完了！（進捗なし）"
       fi
-      print_info "データベースをコピーしたよ: $dest_db"
+      print_info "データベースをコピーしたよ: $SHOESTRING_DIR"
     else
       print_warning "データベースが見つからないよ: $src_db。コピーはスキップ。"
     fi
@@ -608,8 +615,8 @@ copy_data() {
         print_info "チェーンデータコピー完了！"
       else
         sudo cp -a "$src_data/." "$dest_data/" 2>>"$SHOESTRING_DIR/data_copy.log" \
-          || error_exit "チェーンデータコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
-        print_info "チェーンデータコピー完了！（進捗なし）"
+          || error_exit "チェーンデータのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
+        print_info "データコピー完了！（進捗なし）"
       fi
       print_info "データをコピーしたよ: $dest_data"
     else
@@ -704,12 +711,13 @@ setup_shoestring() {
         absolute_node_key=$(realpath "$ca_key_path")
     fi
     print_info "shoestring.ini の [imports] を更新するよ"
-    local absolute_harvesting_escaped=$(printf '%s' "$absolute_harvesting" | sed 's/[\/&]/\\&/g')
+    local absolute_harvesting_escaped=$(printf '%s" '%s' "$absolute_harvesting" | sed 's/[\/&]/\\&/g)
+    local absolute_key_escaped=$(printf '%s' "$absolute_harvesting" | sed 's/[\/&]/\\&/g)
     local absolute_node_key_escaped=$(printf '%s' "$absolute_node_key" | sed 's/[\/&]/\\&/g')
-    sed -i "/^\[imports]/,/^\[.*]/ s|^harvester =.*|harvester = $absolute_harvesting_escaped|" "$config_file"
-    sed -i "/^\[imports]/,/^\[.*]/ s|^nodeKey =.*|nodeKey = $absolute_node_key_escaped|" "$config_file"
-    grep -A 5 '^\[imports]' "$config_file" > "$SHOESTRING_DIR/imports_snippet.log" 2>&1
-    log "[imports] 更新後: $(cat "$SHOESTRING_DIR/imports_snippet.log" | sed 's/["`/]/\\&/g')" "DEBUG"
+    sed -i "/^\[imports\]/,/^\[.*\]/ s|^harvester\s*=.*|harvester = $absolute_harvesting_escaped|" "$config_file"
+    sed -i "/^\[imports\]/,/^\[.*\]/ s|^nodeKey =\s*.*|nodeKey = $absolute_node_key_escaped|" "$config_file"
+    grep -A 5 '^\[imports\]' "$config_file" > "$SHOESTRING_DIR/imports_snippet.log" 2>&1
+    log "[imports] 更新後: $(cat "$SHOESTRING_DIR/imports_info.log" | sed"s/['"]/g)" "DEBUG"
     
     validate_ini "$config_file"
     if ! $SKIP_CONFIRM; then
@@ -738,16 +746,16 @@ minFeeMultiplier = 100
 host = $host_name
 friendlyName = $friendly_name
 EOF
-    log "overrides.ini 内容: $(cat "$overrides_file" | sed 's/["`/]/\\&/g')" "DEBUG"
+    log "overrides.ini 内容: $(cat "$overrides_file" | sed 's/["'$']/\\/g)" "DEBUG"
     validate_ini "$overrides_file"
     if ! $SKIP_CONFIRM; then
         confirm_and_edit_ini "$overrides_file"
     fi
-    print_info "overrides.ini を生成: $overrides_file"
+    print_info "overrides.ini を生成しました"
     
     print_info "Shoestring のセットアップを実行するよ"
     log "python3 -m shoestring setup --ca-key-path \"$ca_key_path\" --config \"$config_file\" --overrides \"$overrides_file\" --directory \"$shoestring_subdir\" --package $network_type" "DEBUG"
-    python3 -m shoestring setup --ca-key-path "$ca_key_path" --config "$config_file" --overrides "$overrides_file" --directory "$shoestring_subdir" --package "$network_type" > "$SHOESTRING_DIR/setup_shoestring.log" 2>&1 || error_exit "Shoestring ノードのセットアップに失敗。ログを確認してね: cat $SHOESTRING_DIR/setup_shoestring.log"
+    python3 -m shoestring setup --ca-key-path "$ca_key_path" --config "$config_file" --overrides "$overrides_file" --directory "$shoestring_subdir" --package $network_type" > "$SHOESTRING_DIR/setup_shoestring.log" 2>&1 || error_exit "Shoestring ノードのセットアップに失敗。ログを確認してね: cat $SHOESTRING_DIR/setup_shoestring.log"
     
     copy_data
     
@@ -785,22 +793,22 @@ show_post_migration_guide() {
     if [ "$NODE_KEY_FOUND" = true ]; then
         print_warning "node.key.pem と config-harvesting.properties は安全な場所にバックアップして保管してね！"
     else
-        print_warning "ca.key.pem と config-harvesting.properties は安全な場所にバックアップして保管してね！"
+        print_warning "ca.key.pem と config-harvesting.properties は安全な場所にバックアップしてね！"
     fi
     print_info "ノードの状態を確認するには:"
     echo "  1. コンテナ確認: docker ps"
     echo "  2. ログ確認: cd \"$SHOESTRING_DIR/shoestring\" && docker-compose logs -f"
     echo "  3. REST API 確認: curl http://localhost:3000"
-    print_info "ノードタイプを変更したい場合: nano $SHOESTRING_DIR/shoestring/shoestring.ini で [node] の features や lightApi を編集"
+    print_info "ノードタイプを変更したい場合: nano $SHOESTRING_DIR/shoestring/shoestring.ini で [node] の features や lightApi を編集して"
     print_info "ログの詳細を確認: tail -f $SHOESTRING_DIR/setup.log"
     print_info "データコピーエラー: cat $SHOESTRING_DIR/data_copy.log"
-    print_info "import-bootstrap が失敗した場合、yq を使った方法を試してね: https://github.com/mikunNEM/bootstrap-to-shoestring"
-    print_info "sudo サポート: https://x.com/mikunNEM"
+    print_info "import-bootstrap が失敗した場合、yq を使った方法を試してみて: https://github.com/mikunNEM/bootstrap-to-shoestring"
+    print_info "サポート: https://x.com/mikunNEM"
 }
 
 # 主処理
 main() {
-    print_info "Symbol bootstrap から Shoestring への移行を始めるよ！"
+    print_info "Symbol Bootstrap から Shoestring への移行を始めるよ！"
     log "Starting migration process..." "INFO"
     
     auto_detect_dirs
