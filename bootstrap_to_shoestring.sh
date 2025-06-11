@@ -32,8 +32,6 @@
 # - pipエラー: pip install --yes --verbose symbol-shoestring > pip.log 2>&1
 # - サポート: https://x.com/mikunNEM
 #
-# 作成者: mikun (@mikunNEM, 2025-06-07)
-# バージョン: 2025-06-07-v20
 
 # --- Ubuntu バージョンチェック & アップグレード案内 ---
 if [ -f /etc/os-release ]; then
