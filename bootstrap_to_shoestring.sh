@@ -51,7 +51,16 @@ fi
 
 set -eu
 
-source "$(dirname "$0")/utils.sh"
+# utils.sh をソース（同じディレクトリにあることを確認）
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/utils.sh" ]; then
+    source "$SCRIPT_DIR/utils.sh"
+else
+    echo "ERROR: utils.sh が見つかりません。同じディレクトリに utils.sh があることを確認してください。"
+    echo "現在のディレクトリ: $SCRIPT_DIR"
+    echo "探しています: $SCRIPT_DIR/utils.sh"
+    exit 1
+fi
 
 # スクリプトバージョン
 SCRIPT_VERSION="2025-06-11-v26" # 更新されたバージョン
@@ -59,11 +68,16 @@ SCRIPT_VERSION="2025-06-11-v26" # 更新されたバージョン
 # グローバル変数
 SHOESTRING_DIR=""
 SHOESTRING_DIR_DEFAULT="$HOME/shoestring"
+BOOTSTRAP_DIR=""
 BOOTSTRAP_DIR_DEFAULT="$HOME/symbol-bootstrap/target"
+BACKUP_DIR=""
 BACKUP_DIR_DEFAULT="$HOME/symbol-bootstrap-backup-$(date +%Y%m%d_%H%M%S)"
 ENCRYPTED=false
 SKIP_CONFIRM=false
 NODE_KEY_FOUND=false
+LOG_FILE=""
+ADDRESSES_YML=""
+SHOESTRING_RESOURCES=""
 
 # コマンドライン引数
 while [ $# -gt 0 ]; do
@@ -92,7 +106,7 @@ check_apt_locks() {
         fi
     done
     # dpkg の修復
-    sudo dpkg --configure -a >> "$SHOESTRING_DIR/setup.log" 2>&1 || print_warning "dpkg の修復に失敗しましたが、続行します。"
+    sudo dpkg --configure -a >> "$LOG_FILE" 2>&1 || print_warning "dpkg の修復に失敗しましたが、続行します。"
 }
 
 # ディレクトリ権限の修正
@@ -122,22 +136,22 @@ retry_command() {
     local attempt=1
     while [ $attempt -le "$max_attempts" ]; do
         print_info "試行 $attempt/$max_attempts: $cmd"
-        if eval "$cmd" >> "$SHOESTRING_DIR/setup.log" 2>&1; then
+        if eval "$cmd" >> "$LOG_FILE" 2>&1; then
             return 0
         else
             print_warning "失敗したよ。詳細なエラーログ:"
-            tail -n 10 "$SHOESTRING_DIR/setup.log"
+            tail -n 10 "$LOG_FILE"
             print_warning "5秒後に再試行..."
             sleep 5
             ((attempt++))
         fi
     done
     # apt-get update の場合、command-not-found エラーは無視して続行
-    if [[ "$cmd" == *"apt-get update"* ]] && grep -q "command-not-found" "$SHOESTRING_DIR/setup.log"; then
+    if [[ "$cmd" == *"apt-get update"* ]] && grep -q "command-not-found" "$LOG_FILE"; then
         print_warning "apt-get update で command-not-found エラーが発生しましたが、続行します。"
         return 0
     fi
-    error_exit "コマンドに失敗: $cmd。ログを確認してください: cat $SHOESTRING_DIR/setup.log"
+    error_exit "コマンドに失敗: $cmd。ログを確認してください: cat $LOG_FILE"
 }
 
 # 依存のインストール
@@ -267,36 +281,36 @@ install_dependencies() {
     fi
     if [ ! -f "$venv_dir/bin/activate" ]; then
         print_info "仮想環境を作成するよ..."
-        /usr/bin/python3.12 -m venv "$venv_dir" >> "$SHOESTRING_DIR/setup.log" 2>&1 || {
+        /usr/bin/python3.12 -m venv "$venv_dir" >> "$LOG_FILE" 2>&1 || {
             print_warning "仮想環境の作成に失敗しました。pip なしで再試行します..."
-            /usr/bin/python3.12 -m venv --without-pip "$venv_dir" >> "$SHOESTRING_DIR/setup.log" 2>&1 || error_exit "仮想環境の作成に失敗: $venv_dir。ログを確認してください: cat $SHOESTRING_DIR/setup.log"
+            /usr/bin/python3.12 -m venv --without-pip "$venv_dir" >> "$LOG_FILE" 2>&1 || error_exit "仮想環境の作成に失敗: $venv_dir。ログを確認してください: cat $LOG_FILE"
             source "$venv_dir/bin/activate"
-            curl https://bootstrap.pypa.io/get-pip.py -o "$SHOESTRING_DIR/get-pip.py" >> "$SHOESTRING_DIR/setup.log" 2>&1
-            /usr/bin/python3.12 "$SHOESTRING_DIR/get-pip.py" >> "$SHOESTRING_DIR/setup.log" 2>&1 || error_exit "pip のインストールに失敗しました。ログを確認してください: cat $SHOESTRING_DIR/setup.log"
+            curl https://bootstrap.pypa.io/get-pip.py -o "$SHOESTRING_DIR/get-pip.py" >> "$LOG_FILE" 2>&1
+            /usr/bin/python3.12 "$SHOESTRING_DIR/get-pip.py" >> "$LOG_FILE" 2>&1 || error_exit "pip のインストールに失敗しました。ログを確認してください: cat $LOG_FILE"
             rm -f "$SHOESTRING_DIR/get-pip.py"
         }
         source "$venv_dir/bin/activate"
-        local pip_version=$(python3 -m pip --version 2>>"$SHOESTRING_DIR/setup.log")
+        local pip_version=$(python3 -m pip --version 2>>"$LOG_FILE")
         print_info "pip バージョン: $pip_version"
         retry_command "pip install --upgrade pip"
         print_info "symbol-shoestring をインストール中…"
         set +e
-        pip install symbol-shoestring==0.2.1 >>"$SHOESTRING_DIR/setup.log" 2>&1
+        pip install symbol-shoestring==0.2.1 >>"$LOG_FILE" 2>&1
         if [ $? -ne 0 ]; then
             print_warning "symbol-shoestring のビルドに失敗しました。Python 開発ヘッダをインストールします…"
             check_apt_locks
             retry_command "sudo apt-get update"
             retry_command "sudo apt-get install -y python3.12-dev build-essential libssl-dev"
             print_info "再度 symbol-shoestring をインストール中…"
-            pip install symbol-shoestring==0.2.1 >>"$SHOESTRING_DIR/setup.log" 2>&1
+            pip install symbol-shoestring==0.2.1 >>"$LOG_FILE" 2>&1
             if [ $? -ne 0 ]; then
-                error_exit "symbol-shoestring の再インストールにも失敗しました。ログを確認してください: cat $SHOESTRING_DIR/setup.log"
+                error_exit "symbol-shoestring の再インストールにも失敗しました。ログを確認してください: cat $LOG_FILE"
             fi
             print_success "symbol-shoestring のインストールに成功しました！"
         else
             print_success "symbol-shoestring のインストールに成功しました！"
         fi
-        pip install setuptools >>"$SHOESTRING_DIR/setup.log" 2>&1 || print_warning "setuptools のインストールに失敗しましたが、続行します。"
+        pip install setuptools >>"$LOG_FILE" 2>&1 || print_warning "setuptools のインストールに失敗しましたが、続行します。"
         set -e
         pip list > "$SHOESTRING_DIR/pip_list.log" 2>&1
         if grep -q symbol-shoestring "$SHOESTRING_DIR/pip_list.log"; then
@@ -513,12 +527,12 @@ check_node_key() {
         if [ -f "$path" ]; then
             print_info "Bootstrap の node.key.pem を見つけました: $path"
             NODE_KEY_FOUND=true
-            return
+            return 0
         fi
     done
     print_warning "Bootstrap の node.key.pem が見つからないよ。新しいca.key.pemを生成するね！"
     NODE_KEY_FOUND=false
-    return
+    return 1
 }
 
 # ディスク容量の確認
@@ -546,10 +560,10 @@ copy_data() {
     
     print_info "Bootstrap と Shoestring のノードを停止するよ"
     if [ -d "$BOOTSTRAP_DIR" ]; then
-        cd "$BOOTSTRAP_DIR" && sudo docker-compose down >> "$SHOESTRING_DIR/data_copy.log" 2>&1 || print_warning "Bootstrap のノード停止に失敗したけど、続行けるよ"
+        cd "$BOOTSTRAP_DIR" && sudo docker-compose down >> "$SHOESTRING_DIR/data_copy.log" 2>&1 || print_warning "Bootstrap のノード停止に失敗したけど、続行するよ"
     fi
     if [ -d "$SHOESTRING_DIR/shoestring" ]; then
-        cd "$SHOESTRING_DIR/shoestring" && sudo docker-compose down >> "$SHOESTRING_DIR/data_copy.log" 2>&1 || print_warning "Shoestring のノードに失敗したけど、続行するよ"
+        cd "$SHOESTRING_DIR/shoestring" && sudo docker-compose down >> "$SHOESTRING_DIR/data_copy.log" 2>&1 || print_warning "Shoestring のノード停止に失敗したけど、続行するよ"
     fi
     
     if [ -d "$src_db" ]; then
@@ -692,6 +706,7 @@ setup_shoestring() {
         print_info "既存の overrides.ini をバックアップ: $overrides_file.bak-$(date +%Y%m%d_%H%M%S)"
     fi
     cat > "$overrides_file" << EOF
+
 [user.account]
 enableDelegatedHarvestersAutoDetection = true
 
@@ -706,7 +721,7 @@ minFeeMultiplier =100
 host = $host_name
 friendlyName = $friendly_name
 EOF
-    log "overrides.ini 内容: $(cat "$overrides_file" | sed 's/["'"$']/\\&/g')" "DEBUG"
+    log "overrides.ini 内容: $(cat "$overrides_file" | sed 's/["'"]/\\&/g')" "DEBUG"
     validate_ini "$overrides_file"
     if ! $SKIP_CONFIRM; then
         confirm_and_edit_ini "$overrides_file"
@@ -727,24 +742,24 @@ EOF
 
 # 移行後のガイド
 show_post_migration_guide() {
-    print_info "Post-migration guideが終わった！これからやること："
+    print_info "移行が終わった！これからやること："
     echo -e "${GREEN}Symbol Bootstrap から Shoestring への移行が完了！${NC}"
     echo
     print_info "大事なファイル："
     if [ "$NODE_KEY_FOUND" = true ]; then
         echo "  - ノード秘密鍵: $SHOESTRING_DIR/shoestring/node.key.pem"
-        echo "  -  - Bootstrap の node.key.pem を移行したよ！証明書がそのまま使えるからスッキリ！"
+        echo "  - Bootstrap の node.key.pem を移行したよ！証明書がそのまま使えるからスッキリ！"
     else
-        echo "  -  - CA秘密鍵: $SHOESTRING_DIR/shoestring/ca.key.pem"
+        echo "  - CA秘密鍵: $SHOESTRING_DIR/shoestring/ca.key.pem"
     fi
-    echo "  -  - ハーベスト設定: $SHOESTRING_DIR/shoestring/config-harvesting.properties"
-    echo "  -  - バックアップ: $BACKUP_DIR"
-    echo "  -  - ログ: $SHOESTRING_DIR/setup.log"
-    echo "  -  - 設定: $SHOESTRING_DIR/shoestring/shoestring.ini"
-    echo "  -  - 上書き設定: $SHOESTRING_DIR/shoestring/overrides.ini"
-    echo "  -  - Docker Compose: $SHOESTRING_DIR/shoestring/docker-compose.yml"
-    echo "  -  - データベース: $SHOESTRING_DIR/shoestring/dbdata"
-    echo "  -  - データ: $SHOESTRING_DIR/shoestring/data"
+    echo "  - ハーベスト設定: $SHOESTRING_DIR/shoestring/config-harvesting.properties"
+    echo "  - バックアップ: $BACKUP_DIR"
+    echo "  - ログ: $SHOESTRING_DIR/setup.log"
+    echo "  - 設定: $SHOESTRING_DIR/shoestring/shoestring.ini"
+    echo "  - 上書き設定: $SHOESTRING_DIR/shoestring/overrides.ini"
+    echo "  - Docker Compose: $SHOESTRING_DIR/shoestring/docker-compose.yml"
+    echo "  - データベース: $SHOESTRING_DIR/shoestring/dbdata"
+    echo "  - データ: $SHOESTRING_DIR/shoestring/data"
     echo
     if [ "$NODE_KEY_FOUND" = true ]; then
         print_warning "node.key.pem と config-harvesting.properties は安全な場所にバックアップして保管してね！"
@@ -752,9 +767,9 @@ show_post_migration_guide() {
         print_warning "ca.key.pem と config-harvesting.properties は安全な場所にバックアップして保管してね！"
     fi
     print_info "ノードの状態を確認するには:"
-    echo "  1.  コンテナ確認: docker ps"
-    echo "  2.  ログ確認: cd \"$SHOESTRING_DIR/shoestring\" && docker-compose logs -f"
-    echo "  3.  REST API 確認: curl http://localhost:3000"
+    echo "  1. コンテナ確認: docker ps"
+    echo "  2. ログ確認: cd \"$SHOESTRING_DIR/shoestring\" && docker-compose logs -f"
+    echo "  3. REST API 確認: curl http://localhost:3000"
     print_info "ノードタイプを変更したい場合: nano $SHOESTRING_DIR/shoestring/shoestring.ini で [node] の features や lightApi を編集"
     print_info "ログの詳細を確認: tail -f $SHOESTRING_DIR/setup.log"
     print_info "データコピーエラー: cat $SHOESTRING_DIR/data_copy.log"
@@ -765,16 +780,33 @@ show_post_migration_guide() {
 # 主処理
 main() {
     print_info "Symbol Bootstrap から Shoestring への移行を始めるよ！"
-    log "Starting migration process..." "INFO"
+    
+    # グローバル変数を初期化
     auto_detect_dirs
+    LOG_FILE="$SHOESTRING_DIR/setup.log"
+    
+    # ログディレクトリを作成
+    mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
+    
+    log "Starting migration process..." "INFO"
+    
+    # 基本的な環境チェック（symbol-bootstrap を除く）
+    print_info "基本環境をチェックするよ"
+    check_command "python3" || error_exit "python3 が見つからないよ。インストール: sudo apt install python3"
+    check_python_version
+    
     install_dependencies
     collect_user_info
+    
+    # LOG_FILE と関連変数を再設定
+    LOG_FILE="$SHOESTRING_DIR/setup.log"
+    ADDRESSES_YML="$BOOTSTRAP_DIR/addresses.yml"
+    SHOESTRING_RESOURCES="$SHOESTRING_DIR/shoestring"
+    
     if ! check_node_key; then
         print_info "node.key.pemが見つからなかったけど、ca.key.pemを生成して進むよ！"
     fi
-    ADDRESSES_YML="$BOOTSTRAP_DIR/addresses.yml"
-    SHOESTRING_RESOURCES="$SHOESTRING_DIR/shoestring"
-    LOG_FILE="$SHOESTRING_DIR/setup.log"
+    
     validate_file "$ADDRESSES_YML"
     create_backup
     setup_shoestring
