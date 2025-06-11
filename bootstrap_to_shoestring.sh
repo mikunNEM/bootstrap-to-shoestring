@@ -54,12 +54,12 @@ set -eu
 source "$(dirname "$0")/utils.sh"
 
 # スクリプトバージョン
-SCRIPT_VERSION="2025-06-12-v24" # 更新されたバージョン
+SCRIPT_VERSION="2025-06-11-v24" # 更新されたバージョン
 
 # グローバル変数
 SHOESTRING_DIR=""
 SHOESTRING_DIR_DEFAULT="$HOME/shoestring"
-BOOTSTRAP_DIR_DEFAULT="$HOME/symbol-bootstrap"
+BOOTSTRAP_DIR_DEFAULT="$HOME/symbol-bootstrap/target"
 BACKUP_DIR_DEFAULT="$HOME/symbol-bootstrap-backup-$(date +%Y%m%d_%H%M%S)"
 ENCRYPTED=false
 SKIP_CONFIRM=false
@@ -261,6 +261,10 @@ install_dependencies() {
   local venv_dir="$SHOESTRING_DIR/shoestring-env"
   print_info "仮想環境パス: $venv_dir"
   fix_dir_permissions "$SHOESTRING_DIR"
+  if [ -d "$venv_dir" ]; then
+    print_warning "既存の仮想環境が見つかりました: $venv_dir。削除して再作成します..."
+    rm -rf "$venv_dir"
+  fi
   if [ ! -f "$venv_dir/bin/activate" ]; then
     print_info "仮想環境を作成するよ..."
     # python3.12 を明示的に使用
@@ -269,8 +273,8 @@ install_dependencies() {
       /usr/bin/python3.12 -m venv --without-pip "$venv_dir" >> "$SHOESTRING_DIR/setup.log" 2>&1 || error_exit "仮想環境の作成に失敗: $venv_dir。ログを確認してください: cat $SHOESTRING_DIR/setup.log"
       source "$venv_dir/bin/activate"
       # pip を手動でインストール
-      curl https://bootstrap.pypa.io/get-pip.py -o "$SHOESTRING_DIR/get-pip.py"
-      python3.12 "$SHOESTRING_DIR/get-pip.py" >> "$SHOESTRING_DIR/setup.log" 2>&1 || error_exit "pip のインストールに失敗しました。ログを確認してください: cat $SHOESTRING_DIR/setup.log"
+      curl https://bootstrap.pypa.io/get-pip.py -o "$SHOESTRING_DIR/get-pip.py" >> "$SHOESTRING_DIR/setup.log" 2>&1
+      /usr/bin/python3.12 "$SHOESTRING_DIR/get-pip.py" >> "$SHOESTRING_DIR/setup.log" 2>&1 || error_exit "pip のインストールに失敗しました。ログを確認してください: cat $SHOESTRING_DIR/setup.log"
       rm -f "$SHOESTRING_DIR/get-pip.py"
     }
     source "$venv_dir/bin/activate"
@@ -322,7 +326,7 @@ auto_detect_dirs() {
     # Bootstrap ディレクトリ
     local bootstrap_dirs=(
         "$HOME/symbol-bootstrap/target"
-        "$HOME/symbol-bootstrap/target"
+        "$HOME/symbol-bootstrap"
         "$(find "$HOME" -maxdepth 3 -type d -name target 2>/dev/null | grep symbol-bootstrap | head -n 1)"
     )
     for dir in "${bootstrap_dirs[@]}"; do
@@ -624,7 +628,7 @@ setup_shoestring() {
     fix_dir_permissions "$shoestring_subdir"
     
     local network_type friendly_name
-    IFS=' ' read -r network_type" "$@"friendly_name <<< "$(detect_network_and_roles)"
+    IFS=' ' read -r network_type friendly_name <<< "$(detect_network_and_roles)"
     print_info "検出したネットワーク: $network_type、ノード名: $friendly_name"
     log "Parsed - network_type: $network_type, friendly_name: $friendly_name" "DEBUG"
     
@@ -633,7 +637,7 @@ setup_shoestring() {
     print_info "検出したホスト: $host_name"
     
     local config_file="$shoestring_subdir/shoestring.ini"
-    print_info "shoestring config を初期化するよ..."
+    print_info "shoestring.ini を初期化するよ"
     log "python3 -m shoestring init \"$config_file\" --package $network_type" "DEBUG"
     python3 -m shoestring init "$config_file" --package "$network_type" > "$SHOESTRING_DIR/install_shoestring.log" 2>&1 || error_exit "shoestring.ini の初期化に失敗。手動で確認してね: python3 -m shoestring init $config_file"
     
@@ -648,7 +652,7 @@ setup_shoestring() {
             print_info "node.key.pem をコピー: $dest_node_key"
         fi
         log "python3 -m shoestring import-bootstrap --config \"$config_file\" --bootstrap \"$BOOTSTRAP_DIR\" --include-node-key" "DEBUG"
-        python3 -m shoestring import-bootstrap --config "$config_file" --bootstrap \"$BOOTSTRAP_DIR\" --include-node-key > "$SHOESTRING_DIR/import_bootstrap.log" 2>&1 || error_exit "import-bootstrap に失敗。ログを確認してね: cat $SHOESTRING_DIR/import_bootstrap.log"
+        python3 -m shoestring import-bootstrap --config "$config_file" --bootstrap "$BOOTSTRAP_DIR" --include-node-key > "$SHOESTRING_DIR/import_bootstrap.log" 2>&1 || error_exit "import-bootstrap に失敗。ログを確認してね: cat $SHOESTRING_DIR/import_bootstrap.log"
         if [ ! -f "$ca_key_path" ]; then
             print_info "新しい ca.key.pem を生成するよ"
             log "新しい ca.key.pem を生成するよ" "INFO"
@@ -660,7 +664,7 @@ setup_shoestring() {
             echo "$private_key" > "$temp_key_file"
             log "プライベートキー（最初の12文字）: ${private_key:0:12}..." "DEBUG"
             python3 -m shoestring pemtool --input "$temp_key_file" --output "$ca_key_path" >> "$SHOESTRING_DIR/pemtool.log" 2>&1 || error_exit "ca.key.pem の生成に失敗したよ。ログを確認してね: cat $SHOESTRING_DIR/pemtool.log"
-            rm -f" "$temp_key_file"
+            rm -f "$temp_key_file"
             print_info "ca.key.pem を生成: $ca_key_path"
         else
             print_info "既存の ca.key.pem を使用: $ca_key_path"
@@ -673,7 +677,7 @@ setup_shoestring() {
         if [ -z "$private_key" ]; then
             error_exit "プライベートキーの生成に失敗したよ。OpenSSLを確認してね: openssl rand -hex 32"
         fi
-        local temp_key_file=$(mktemp")
+        local temp_key_file=$(mktemp)
         echo "$private_key" > "$temp_key_file"
         log "プライベートキー（最初の12文字）: ${private_key:0:12}..." "DEBUG"
         python3 -m shoestring pemtool --input "$temp_key_file" --output "$ca_key_path" >> "$SHOESTRING_DIR/pemtool.log" 2>&1 || error_exit "ca.key.pem の生成に失敗したよ。ログを確認してね: cat $SHOESTRING_DIR/pemtool.log"
@@ -702,16 +706,16 @@ setup_shoestring() {
     print_info "shoestring.ini の [imports] を更新するよ"
     local absolute_harvesting_escaped=$(printf '%s' "$absolute_harvesting" | sed 's/[\/&]/\\&/g')
     local absolute_node_key_escaped=$(printf '%s' "$absolute_node_key" | sed 's/[\/&]/\\&/g')
-    sed -i "/^\[imports\]/,/^\[.*\]/ s|^harvesting =.*|harvesting = $absolute_harvesting_escaped|" "$config_file"
-    sed -i "/^\[imports\]/,/^\[.*\]/ s|^nodeKey =.*|nodeKey = $absolute_node_key_escaped|" "$config_file"
-    grep -A 5 '^\[imports\]' "$config_file" > "$SHOESTRING_DIR/imports_snippet.log" 2>&1
-    log "[imports] 更新後: $(cat "$SHOESTRING_DIR/imports_snippet.log" | sed 's/["`]/\\&/g')" "DEBUG"
+    sed -i "/^\[imports]/,/^\[.*]/ s|^harvester =.*|harvester = $absolute_harvesting_escaped|" "$config_file"
+    sed -i "/^\[imports]/,/^\[.*]/ s|^nodeKey =.*|nodeKey = $absolute_node_key_escaped|" "$config_file"
+    grep -A 5 '^\[imports]' "$config_file" > "$SHOESTRING_DIR/imports_snippet.log" 2>&1
+    log "[imports] 更新後: $(cat "$SHOESTRING_DIR/imports_snippet.log" | sed 's/["`/]/\\&/g')" "DEBUG"
     
     validate_ini "$config_file"
     if ! $SKIP_CONFIRM; then
         confirm_and_edit_ini "$config_file"
     fi
-    print_info "shoestring.ini を生成しました: $config_file"
+    print_info "shoestring.ini を生成: $config_file"
     
     local overrides_file="$shoestring_subdir/overrides.ini"
     print_info "overrides.ini を生成するよ"
@@ -739,7 +743,7 @@ EOF
     if ! $SKIP_CONFIRM; then
         confirm_and_edit_ini "$overrides_file"
     fi
-    print_info "overrides.ini を生成しました"
+    print_info "overrides.ini を生成: $overrides_file"
     
     print_info "Shoestring のセットアップを実行するよ"
     log "python3 -m shoestring setup --ca-key-path \"$ca_key_path\" --config \"$config_file\" --overrides \"$overrides_file\" --directory \"$shoestring_subdir\" --package $network_type" "DEBUG"
@@ -765,7 +769,7 @@ show_post_migration_guide() {
     print_info "大事なファイル："
     if [ "$NODE_KEY_FOUND" = true ]; then
         echo "  - ノード秘密鍵: $SHOESTRING_DIR/shoestring/node.key.pem"
-        echo "  - Bootstrap の node.key.pem を移行したよ！証明書がそのまま使えるのでスッキリ！"
+        echo "  - Bootstrap の node.key.pem を移行したよ！証明書がそのまま使えるからスッキリ！"
     else
         echo "  - CA秘密鍵: $SHOESTRING_DIR/shoestring/ca.key.pem"
     fi
@@ -775,13 +779,13 @@ show_post_migration_guide() {
     echo "  - 設定: $SHOESTRING_DIR/shoestring/shoestring.ini"
     echo "  - 上書き設定: $SHOESTRING_DIR/shoestring/overrides.ini"
     echo "  - Docker Compose: $SHOESTRING_DIR/shoestring/docker-compose.yml"
-    echo "  - データベース: $SHOESTRING_DIR/dbdata"
-    echo "  - データ: $SHOESTRING_DIR/data"
+    echo "  - データベース: $SHOESTRING_DIR/shoestring/dbdata"
+    echo "  - データ: $SHOESTRING_DIR/shoestring/data"
     echo
     if [ "$NODE_KEY_FOUND" = true ]; then
         print_warning "node.key.pem と config-harvesting.properties は安全な場所にバックアップして保管してね！"
     else
-        print_warning "ca.key.pem と config-harvesting.properties は安全な場所にバックアップしてください！"
+        print_warning "ca.key.pem と config-harvesting.properties は安全な場所にバックアップして保管してね！"
     fi
     print_info "ノードの状態を確認するには:"
     echo "  1. コンテナ確認: docker ps"
@@ -790,20 +794,20 @@ show_post_migration_guide() {
     print_info "ノードタイプを変更したい場合: nano $SHOESTRING_DIR/shoestring/shoestring.ini で [node] の features や lightApi を編集"
     print_info "ログの詳細を確認: tail -f $SHOESTRING_DIR/setup.log"
     print_info "データコピーエラー: cat $SHOESTRING_DIR/data_copy.log"
-    print_info "import-bootstrap が失敗した場合、yq を使った方法を試してください: https://github.com/mikunNEM/bootstrap-to-shoestring"
-    print_info "困ったらサポート: https://x.com/mikunNEM"
+    print_info "import-bootstrap が失敗した場合、yq を使った方法を試してね: https://github.com/mikunNEM/bootstrap-to-shoestring"
+    print_info "sudo サポート: https://x.com/mikunNEM"
 }
 
 # 主処理
 main() {
-    print_info "Symbol Bootstrap から Shoestring への移行を始めるよ！"
+    print_info "Symbol bootstrap から Shoestring への移行を始めるよ！"
     log "Starting migration process..." "INFO"
     
     auto_detect_dirs
     install_dependencies
     collect_user_info
     if ! check_node_key; then
-        print_info "node.key.pemが見つかりませんでした。ca.key.pemを生成して進みます！"
+        print_info "node.key.pemが見つからなかったけど、ca.key.pemを生成して進むよ！"
     fi
     ADDRESSES_YML="$BOOTSTRAP_DIR/addresses.yml"
     SHOESTRING_RESOURCES="$SHOESTRING_DIR/shoestring"
