@@ -148,7 +148,11 @@ install_dependencies() {
     if [[ $os_name == "ubuntu" || $os_name == "debian" ]]; then
         print_info "APT ロックファイルをチェックして削除..."
         check_apt_locks
-        retry_command "sudo apt-get install -y python3-apt"
+        # python3-apt の動作確認と再インストール
+        if ! python3 -c "import apt_pkg" 2>/dev/null; then
+            print_warning "apt_pkg モジュールが見つかりません。再インストールします..."
+            retry_command "sudo apt-get install --reinstall python3-apt"
+        fi
         retry_command "sudo apt-get update"
         retry_command "sudo apt-get install -y software-properties-common"
         retry_command "sudo add-apt-repository --yes ppa:deadsnakes/ppa"
@@ -567,7 +571,7 @@ copy_data() {
         mkdir -p "$dest_data" || error_exit "$dest_data の作成に失敗"
         fix_dir_permissions "$dest_data"
         if command -v pv >/dev/null 2>&1; then
-            echo -e "${YELLOW}チェーンデータコ its ピー中... sudo のパスワードを入力してね:${NC}"
+            echo -e "${YELLOW}チェーンデータコピー中... sudo のパスワードを入力してね:${NC}"
             print_info "チェーンデータをコピー中（進捗は画面に表示）…"
             sudo tar -C "$src_data" -cf - . 2>>"$SHOESTRING_DIR/data_copy.log" \
               | pv \
@@ -669,7 +673,7 @@ setup_shoestring() {
     sed -i "/^\[imports\]/,/^\[.*\]/ s|^harvesting\s*=.*|harvesting = $absolute_harvesting_escaped|" "$config_file"
     sed -i "/^\[imports\]/,/^\[.*\]/ s|^nodeKey\s*=.*|nodeKey = $absolute_node_key_escaped|" "$config_file"
     grep -A 5 '^\[imports\]' "$config_file" > "$SHOESTRING_DIR/imports_snippet.log" 2>&1
-    log "[imports] 更新後: $(cat "$SHOESTRING_DIR/imports_snippet.log" | sed 's/["'\''$]/\\&/g')" "DEBUG"
+    log "[imports] 更新後: $(cat "$SHOESTRING_DIR/imports_snippet.log" | sed 's/["'\'']/\\/g')" "DEBUG"
     validate_ini "$config_file"
     if ! $SKIP_CONFIRM; then
         confirm_and_edit_ini "$config_file"
@@ -696,11 +700,7 @@ minFeeMultiplier =100
 host = $host_name
 friendlyName = $friendly_name
 EOF
-    # 変数展開のための置換
-    #sed -i "s/\$host_name/$host_name/g" "$overrides_file"
-    #sed -i "s/\$friendly_name/$friendly_name/g" "$overrides_file"
-    
-    log "overrides.ini 内容: $(cat "$overrides_file" | sed 's/["'\''$]/\\&/g')" "DEBUG"
+    log "overrides.ini 内容: $(cat "$overrides_file" | sed 's/["'\'']/\\/g')" "DEBUG"
     validate_ini "$overrides_file"
     if ! $SKIP_CONFIRM; then
         confirm_and_edit_ini "$overrides_file"
@@ -771,8 +771,8 @@ main() {
     
     # 基本的な環境チェック（symbol-bootstrap を除く）
     print_info "基本環境をチェックするよ"
-    #check_command "python3" || error_exit "python3 が見つからないよ。インストール: sudo apt install python3"
-    #check_python_version
+    check_command "python3" || error_exit "python3 が見つからないよ。インストール: sudo apt install python3"
+    check_python_version
     
     install_dependencies
     collect_user_info
