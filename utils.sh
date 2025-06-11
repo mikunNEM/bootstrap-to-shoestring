@@ -211,20 +211,36 @@ check_python_version() {
     log "Python バージョンチェックOK: $python_version" "DEBUG"
 }
 
-# 仮想環境のチェック
-check_venv() {
+# 仮想環境のチェック（オプション）
+check_venv_optional() {
     local venv_dir="$1"
     if [ ! -f "${venv_dir}/bin/activate" ]; then
-        error_exit "仮想環境が見つかりません: ${venv_dir}。作成コマンド: python3 -m venv ${venv_dir}"
+        print_warning "仮想環境が見つかりません: ${venv_dir}。後で作成されます。"
+        return 1
     fi
-    source "${venv_dir}/bin/activate" || error_exit "仮想環境の有効化に失敗しました。"
+    
+    # 仮想環境をアクティベートしてチェック
+    set +e
+    source "${venv_dir}/bin/activate"
+    local activate_result=$?
+    set -e
+    
+    if [ $activate_result -ne 0 ]; then
+        print_warning "仮想環境の有効化に失敗しました。後で再作成されます。"
+        return 1
+    fi
+    
     if ! pip show symbol-shoestring &>/dev/null; then
-        error_exit "symbol-shoestring が未インストール。インストールコマンド: pip install symbol-shoestring"
+        print_warning "symbol-shoestring が未インストール。後でインストールされます。"
+        deactivate
+        return 1
     fi
+    
     local package_version=$(pip show symbol-shoestring | grep Version | cut -d' ' -f2)
     print_success "仮想環境OK: symbol-shoestring v${package_version}"
     log "仮想環境チェックOK: symbol-shoestring v${package_version}" "DEBUG"
     deactivate
+    return 0
 }
 
 # 書き込み権限のチェック
@@ -248,22 +264,4 @@ rotate_log() {
     fi
 }
 
-# 環境チェック
-check_utils() {
-    print_info "環境チェックを開始するよ"
-    log "Starting environment check..." "DEBUG"
-
-    check_command "symbol-bootstrap" || error_exit "symbol-bootstrap が見つからないよ。インストール: npm install -g symbol-bootstrap@1.1.11"
-    check_command "python3" || error_exit "python3 が見つからないよ。インストール: sudo apt install python3"
-    check_command "pip" || error_exit "pip が見つからないよ。インストール: sudo apt install python3-pip"
-    check_python_version
-    rotate_log
-    mkdir -p "${SHOESTRING_DIR}/resources" || error_exit "resources ディレクトリの作成に失敗"
-    check_disk_space "${SHOESTRING_DIR}"
-    check_venv "${SHOESTRING_DIR}/shoestring-env" || error_exit "仮想環境のチェックに失敗。仮想環境を再作成してね: python3 -m venv ${SHOESTRING_DIR}/shoestring-env"
-    check_write_permission "${SHOESTRING_DIR}/resources"
-    print_success "環境チェック完了！"
-    log "Environment check completed" "DEBUG"
-}
-
-export -f log error_exit print_success print_warning print_info ask_user expand_tilde confirm check_command parse_yaml validate_file validate_dir check_disk_space check_python_version check_venv check_write_permission rotate_log check_utils
+export -f log error_exit print_success print_warning print_info ask_user expand_tilde confirm check_command parse_yaml validate_file validate_dir check_disk_space check_python_version check_venv_optional check_write_permission rotate_log
