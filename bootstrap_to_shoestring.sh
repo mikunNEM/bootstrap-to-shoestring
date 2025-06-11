@@ -8,30 +8,6 @@
 #   2. 実行権限: chmod +x ./bootstrap_to_shoestring.sh
 #   3. 実行: bash ./bootstrap_to_shoestring.sh [-y]
 #      -y: 確認をスキップ（上級者向け）
-#
-# 必要環境:
-#   - OS: Ubuntu/Debian（推奨）、CentOS、macOS
-#   - Node.js: v22.16.0 以上
-#   - Python: 3.10 以上（推奨: 3.12.10）
-#   - ツール: symbol-bootstrap@1.1.11、symbol-shoestring、docker-compose
-#   - ディスク: 120GB 以上（データ移行用）
-#
-# 注意:
-# - shoestring.ini の [node] は DUAL ノード（features = API | HARVESTER, lightApi = false）で固定。
-# - 他のノードタイプ（例：Peer ノード）は、セットアップ後に手動で shoestring.ini を編集。
-# - Bootstrap の node.key.pem と config-harvesting.properties を shoestring 配下にコピー。
-# - データベース（db）とデータ（data）をコピーして再同期を回避。
-#
-# FAQ:
-# - エラー時: setup.log を確認（tail -f ~/work/shoestring/setup.log）
-# - 仮想環境欠落: rm -rf ~/shoestring/shoestring-env; python3.12 -m venv ~/shoestring/shoestring-env
-# - 権限エラー: chmod u+rwx ~/shoestring; chown $(whoami):$(whoami) ~/shoestring
-# - import-bootstrapエラー: cat ~/shoestring/import_bootstrap.log
-# - setupエラー: cat ~/shoestring/setup_shoestring.log
-# - shoestring.iniエラー: find /home/mikun/work -name shoestring.ini
-# - pipエラー: pip install --yes --verbose symbol-shoestring > pip.log 2>&1
-# - サポート: https://x.com/mikunNEM
-#
 
 # --- Ubuntu バージョンチェック & アップグレード案内 ---
 if [ -f /etc/os-release ]; then
@@ -63,7 +39,7 @@ else
 fi
 
 # スクリプトバージョン
-SCRIPT_VERSION="2025-06-11-v26" # 更新されたバージョン
+SCRIPT_VERSION="2025-06-11-v26"
 
 # グローバル変数
 SHOESTRING_DIR=""
@@ -705,7 +681,7 @@ setup_shoestring() {
         mv "$overrides_file" "$overrides_file.bak-$(date +%Y%m%d_%H%M%S)"
         print_info "既存の overrides.ini をバックアップ: $overrides_file.bak-$(date +%Y%m%d_%H%M%S)"
     fi
-    cat > "$overrides_file" << EOF
+    cat > "$overrides_file" << 'EOF'
 
 [user.account]
 enableDelegatedHarvestersAutoDetection = true
@@ -721,6 +697,10 @@ minFeeMultiplier =100
 host = $host_name
 friendlyName = $friendly_name
 EOF
+    # 変数展開のための置換
+    sed -i "s/\$host_name/$host_name/g" "$overrides_file"
+    sed -i "s/\$friendly_name/$friendly_name/g" "$overrides_file"
+    
     log "overrides.ini 内容: $(cat "$overrides_file" | sed 's/["'"]/\\&/g')" "DEBUG"
     validate_ini "$overrides_file"
     if ! $SKIP_CONFIRM; then
