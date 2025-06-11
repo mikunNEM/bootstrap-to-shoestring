@@ -98,89 +98,60 @@ fix_dir_permissions() {
 
 # 依存のインストール
 install_dependencies() {
-    print_info "必要なツールをチェック＆インストールするよ！"
-    log "Running bootstrap_to_shoestring.sh version: $SCRIPT_VERSION" "INFO"
-    
-    # OS 検出
-    local os_name="unknown"
-    if [ -f /etc/os-release ]; then
-        os_name=$(grep -E '^ID=' /etc/os-release | awk -F= '{print $2}' | tr -d '"')
-    elif [ "$(uname -s)" = "Darwin" ]; then
-        os_name="macos"
-    fi
-    print_info "OS: $os_name"
+  print_info "依存ツールをチェック＆インストールするよ"
+  log "version $SCRIPT_VERSION" "INFO"
 
-    # Node.js と npm
-    if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
-        print_warning "Node.js または npm が見つからないよ。インストールするね！"
-        case $os_name in
-            ubuntu|debian)
-                retry_command "sudo apt update"
-                retry_command "sudo apt install -y nodejs npm"
-                ;;
-            centos)
-                retry_command "sudo yum install -y nodejs npm"
-                ;;
-            macos)
-                if ! command -v brew >/dev/null 2>&1; then
-                    print_info "Homebrew をインストール..."
-                    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-                fi
-                retry_command "brew install node"
-                ;;
-            *)
-                error_exit "サポートされていないOS: $os_name。Node.js をインストールしてね: https://nodejs.org"
-                ;;
-        esac
-    fi
-    local node_version=$(node -v)
-    print_info "Node.js: $node_version"
+  # OS 判定
+  local os_name="unknown"
+  if [ -f /etc/os-release ]; then
+    os_name=$(grep -E '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
+  elif [ "$(uname -s)" = "Darwin" ]; then
+    os_name="macos"
+  fi
+  print_info "OS: $os_name"
 
-    # Python 開発ヘッダとビルドツール
-    print_info "Python3-dev build-essential libssl-dev を確保するよ"
-    retry_command "sudo apt-get update"
-    retry_command "sudo apt-get install -y python3-dev build-essential libssl-dev"
-
-    # Python 本体
-    if ! command -v python3 >/dev/null 2>&1; then
-        print_warning "Python3 が見つからないよ。インストールするね！"
-        case $os_name in
-            ubuntu|debian)
-                retry_command "sudo apt install -y python3 python3-venv python3-pip"
-                ;;
-            centos)
-                retry_command "sudo yum install -y python3 python3-pip"
-                ;;
-            macos)
-                retry_command "brew install python"
-                ;;
-            *)
-                error_exit "サポートされていないOS: $os_name。Python3 をインストールしてね: https://python.org"
-                ;;
-        esac
+  # Ubuntu/Debian 環境では Python3.12 を導入
+  if [[ $os_name == "ubuntu" || $os_name == "debian" ]]; then
+    retry_command "apt-get update"
+    retry_command "apt-get install -y software-properties-common"
+    retry_command "add-apt-repository --yes ppa:deadsnakes/ppa"
+    retry_command "apt-get update"
+    retry_command "apt-get install -y python3.12 python3.12-venv python3.12-dev python3.12-distutils python3-pip build-essential libssl-dev"
+    # python3 コマンドを python3.12 にリンク
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 2
+  else
+    # macOS/CentOS の場合は従来方式
+    if [ "$os_name" = "macos" ]; then
+      retry_command "brew install python"
+    elif [ "$os_name" = "centos" ]; then
+      retry_command "yum install -y python3 python3-venv python3-pip"
     fi
-    print_info "Python: $(python3 --version)"
+  fi
+  print_info "Python: $(python3 --version)"
 
-    # Docker Compose
-    if ! command -v docker-compose >/dev/null 2>&1; then
-        print_warning "Docker Compose が見つからないよ。インストールするね！"
-        case $os_name in
-            ubuntu|debian)
-                retry_command "sudo apt update"
-                retry_command "sudo apt install -y docker-compose-plugin"
-                ;;
-            centos)
-                retry_command "sudo yum install -y docker-compose"
-                ;;
-            macos)
-                retry_command "brew install docker-compose"
-                ;;
-            *)
-                error_exit "サポートされていないOS: $os_name。Docker Compose をインストールしてね: https://docs.docker.com/compose/install/"
-                ;;
-        esac
-    fi
-    print_info "Docker Compose: $(docker compose version || docker-compose --version)"
+  # Node.js
+  if ! command -v node >/dev/null 2>&1; then
+    print_warning "Node.js が無いのでインストール"
+    case $os_name in
+      ubuntu|debian) retry_command "apt-get install -y nodejs npm" ;;
+      centos)        retry_command "yum install -y nodejs npm" ;;
+      macos)         retry_command "brew install node" ;;
+      *)             error_exit "Node.js を手動でインストールしてください。" ;;
+    esac
+  fi
+  print_info "Node.js: $(node -v)"
+
+  # Docker Compose
+  if ! command -v docker compose >/dev/null 2>&1; then
+    print_warning "Docker Compose が無いのでインストール"
+    case $os_name in
+      ubuntu|debian) retry_command "apt-get install -y docker-compose-plugin" ;;
+      centos)        retry_command "yum install -y docker-compose" ;;
+      macos)         retry_command "brew install docker-compose" ;;
+      *)             error_exit "Docker Compose を手動でインストールしてください。" ;;
+    esac
+  fi
+  print_info "Docker Compose: $(docker compose version)"
 
     # pv（進捗表示用、オプション）
     if ! command -v pv >/dev/null 2>&1; then
