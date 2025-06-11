@@ -54,7 +54,7 @@ set -eu
 source "$(dirname "$0")/utils.sh"
 
 # スクリプトバージョン
-SCRIPT_VERSION="2025-06-07-v21" # 更新されたバージョン
+SCRIPT_VERSION="2025-06-11-v22" # 更新されたバージョン
 
 # グローバル変数
 SHOESTRING_DIR=""
@@ -154,7 +154,8 @@ install_dependencies() {
     retry_command "sudo apt-get install -y software-properties-common"
     retry_command "sudo add-apt-repository --yes ppa:deadsnakes/ppa"
     retry_command "sudo apt-get update"
-    retry_command "sudo apt-get install -y python3.12 python3.12-venv python3.12-dev python3.12-distutils python3-pip build-essential libssl-dev"
+    # python3.12-distutils を python3-distutils に変更
+    retry_command "sudo apt-get install -y python3.12 python3.12-venv python3.12-dev python3-distutils python3-pip build-essential libssl-dev"
     # python3 コマンドを python3.12 にリンク
     update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 2
   else
@@ -257,8 +258,8 @@ install_dependencies() {
     if [ $? -ne 0 ]; then
       print_warning "symbol-shoestring のビルドに失敗しました。Python 開発ヘッダをインストールします…"
       check_apt_locks
-      sudo apt-get update >>"$SHOESTRING_DIR/setup.log" 2>&1
-      sudo apt-get install -y python3-dev build-essential libssl-dev >>"$SHOESTRING_DIR/setup.log" 2>&1
+      retry_command "sudo apt-get update"
+      retry_command "sudo apt-get install -y python3-dev build-essential libssl-dev"
       print_info "再度 symbol-shoestring をインストール中…"
       pip install symbol-shoestring==0.2.1 >>"$SHOESTRING_DIR/setup.log" 2>&1
       if [ $? -ne 0 ]; then
@@ -268,6 +269,8 @@ install_dependencies() {
     else
       print_success "symbol-shoestring のインストールに成功しました！"
     fi
+    # setuptools をインストール（distutils の代替）
+    pip install setuptools >>"$SHOESTRING_DIR/setup.log" 2>&1 || print_warning "setuptools のインストールに失敗しましたが、続行します。"
     set -e
     
     # インストール確認
