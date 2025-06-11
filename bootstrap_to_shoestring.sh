@@ -112,11 +112,11 @@ install_dependencies() {
 
   # Ubuntu/Debian 環境では Python3.12 を導入
   if [[ $os_name == "ubuntu" || $os_name == "debian" ]]; then
-    retry_command "apt-get update"
-    retry_command "apt-get install -y software-properties-common"
-    retry_command "add-apt-repository --yes ppa:deadsnakes/ppa"
-    retry_command "apt-get update"
-    retry_command "apt-get install -y python3.12 python3.12-venv python3.12-dev python3.12-distutils python3-pip build-essential libssl-dev"
+    retry_command "sudo apt-get update"
+    retry_command "sudo apt-get install -y software-properties-common"
+    retry_command "sudo add-apt-repository --yes ppa:deadsnakes/ppa"
+    retry_command "sudo apt-get update"
+    retry_command "sudo apt-get install -y python3.12 python3.12-venv python3.12-dev python3.12-distutils python3-pip build-essential libssl-dev"
     # python3 コマンドを python3.12 にリンク
     update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 2
   else
@@ -133,7 +133,7 @@ install_dependencies() {
   if ! command -v node >/dev/null 2>&1; then
     print_warning "Node.js が無いのでインストール"
     case $os_name in
-      ubuntu|debian) retry_command "apt-get install -y nodejs npm" ;;
+      ubuntu|debian) retry_command "sudo apt-get install -y nodejs npm" ;;
       centos)        retry_command "yum install -y nodejs npm" ;;
       macos)         retry_command "brew install node" ;;
       *)             error_exit "Node.js を手動でインストールしてください。" ;;
@@ -145,7 +145,7 @@ install_dependencies() {
   if ! command -v docker compose >/dev/null 2>&1; then
     print_warning "Docker Compose が無いのでインストール"
     case $os_name in
-      ubuntu|debian) retry_command "apt-get install -y docker-compose-plugin" ;;
+      ubuntu|debian) retry_command "sudo apt-get install -y docker-compose-plugin" ;;
       centos)        retry_command "yum install -y docker-compose" ;;
       macos)         retry_command "brew install docker-compose" ;;
       *)             error_exit "Docker Compose を手動でインストールしてください。" ;;
