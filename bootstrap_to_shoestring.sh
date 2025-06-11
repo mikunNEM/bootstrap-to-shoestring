@@ -24,7 +24,7 @@
 #
 # FAQ:
 # - エラー時: setup.log を確認（tail -f ~/work/shoestring/setup.log）
-# - 仮想環境欠落: rm -rf ~/shoestring/shoestring-env; python3 -m venv ~/shoestring/shoestring-env
+# - 仮想環境欠落: rm -rf ~/shoestring/shoestring-env; python3.12 -m venv ~/shoestring/shoestring-env
 # - 権限エラー: chmod u+rwx ~/shoestring; chown $(whoami):$(whoami) ~/shoestring
 # - import-bootstrapエラー: cat ~/shoestring/import_bootstrap.log
 # - setupエラー: cat ~/shoestring/setup_shoestring.log
@@ -54,12 +54,12 @@ set -eu
 source "$(dirname "$0")/utils.sh"
 
 # スクリプトバージョン
-SCRIPT_VERSION="2025-06-11-v23" # 更新されたバージョン
+SCRIPT_VERSION="2025-06-12-v24" # 更新されたバージョン
 
 # グローバル変数
 SHOESTRING_DIR=""
 SHOESTRING_DIR_DEFAULT="$HOME/shoestring"
-BOOTSTRAP_DIR_DEFAULT="$HOME/symbol-bootstrap/target"
+BOOTSTRAP_DIR_DEFAULT="$HOME/symbol-bootstrap"
 BACKUP_DIR_DEFAULT="$HOME/symbol-bootstrap-backup-$(date +%Y%m%d_%H%M%S)"
 ENCRYPTED=false
 SKIP_CONFIRM=false
@@ -157,7 +157,7 @@ install_dependencies() {
     retry_command "sudo apt-get install -y software-properties-common"
     retry_command "sudo add-apt-repository --yes ppa:deadsnakes/ppa"
     retry_command "sudo apt-get update"
-    # python3.12-distutils を python3-distutils に変更
+    # Python 3.12 関連パッケージをインストール
     retry_command "sudo apt-get install -y python3.12 python3.12-venv python3.12-dev python3-distutils python3-pip build-essential libssl-dev"
     # /etc/alternatives の権限を確認・修正
     print_info "Checking /etc/alternatives permissions..."
@@ -170,6 +170,12 @@ install_dependencies() {
     fi
     # python3 コマンドを python3.12 にリンク
     retry_command "sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 2"
+    # Python 3.12 のバージョンを確認
+    if ! /usr/bin/python3.12 --version 2>/dev/null | grep -q "3.12"; then
+      print_warning "Python 3.12 が正しくインストールされていません。再度インストールを試みます..."
+      retry_command "sudo apt-get install --reinstall -y python3.12 python3.12-venv"
+    fi
+    print_info "Python 3.12: $(/usr/bin/python3.12 --version)"
   else
     # macOS/CentOS の場合は従来方式
     if [ "$os_name" = "macos" ]; then
@@ -257,7 +263,16 @@ install_dependencies() {
   fix_dir_permissions "$SHOESTRING_DIR"
   if [ ! -f "$venv_dir/bin/activate" ]; then
     print_info "仮想環境を作成するよ..."
-    python3 -m venv "$venv_dir" >> "$SHOESTRING_DIR/setup.log" 2>&1 || error_exit "仮想環境の作成に失敗: $venv_dir"
+    # python3.12 を明示的に使用
+    /usr/bin/python3.12 -m venv "$venv_dir" >> "$SHOESTRING_DIR/setup.log" 2>&1 || {
+      print_warning "仮想環境の作成に失敗しました。pip なしで再試行します..."
+      /usr/bin/python3.12 -m venv --without-pip "$venv_dir" >> "$SHOESTRING_DIR/setup.log" 2>&1 || error_exit "仮想環境の作成に失敗: $venv_dir。ログを確認してください: cat $SHOESTRING_DIR/setup.log"
+      source "$venv_dir/bin/activate"
+      # pip を手動でインストール
+      curl https://bootstrap.pypa.io/get-pip.py -o "$SHOESTRING_DIR/get-pip.py"
+      python3.12 "$SHOESTRING_DIR/get-pip.py" >> "$SHOESTRING_DIR/setup.log" 2>&1 || error_exit "pip のインストールに失敗しました。ログを確認してください: cat $SHOESTRING_DIR/setup.log"
+      rm -f "$SHOESTRING_DIR/get-pip.py"
+    }
     source "$venv_dir/bin/activate"
     # pip バージョンチェック
     local pip_version=$(python3 -m pip --version 2>>"$SHOESTRING_DIR/setup.log")
@@ -271,7 +286,7 @@ install_dependencies() {
       print_warning "symbol-shoestring のビルドに失敗しました。Python 開発ヘッダをインストールします…"
       check_apt_locks
       retry_command "sudo apt-get update"
-      retry_command "sudo apt-get install -y python3-dev build-essential libssl-dev"
+      retry_command "sudo apt-get install -y python3.12-dev build-essential libssl-dev"
       print_info "再度 symbol-shoestring をインストール中…"
       pip install symbol-shoestring==0.2.1 >>"$SHOESTRING_DIR/setup.log" 2>&1
       if [ $? -ne 0 ]; then
@@ -609,7 +624,7 @@ setup_shoestring() {
     fix_dir_permissions "$shoestring_subdir"
     
     local network_type friendly_name
-    IFS=' ' read -r network_type friendly_name <<< "$(detect_network_and_roles)"
+    IFS=' ' read -r network_type" "$@"friendly_name <<< "$(detect_network_and_roles)"
     print_info "検出したネットワーク: $network_type、ノード名: $friendly_name"
     log "Parsed - network_type: $network_type, friendly_name: $friendly_name" "DEBUG"
     
@@ -618,7 +633,7 @@ setup_shoestring() {
     print_info "検出したホスト: $host_name"
     
     local config_file="$shoestring_subdir/shoestring.ini"
-    print_info "shoestring.ini を初期化するよ"
+    print_info "shoestring config を初期化するよ..."
     log "python3 -m shoestring init \"$config_file\" --package $network_type" "DEBUG"
     python3 -m shoestring init "$config_file" --package "$network_type" > "$SHOESTRING_DIR/install_shoestring.log" 2>&1 || error_exit "shoestring.ini の初期化に失敗。手動で確認してね: python3 -m shoestring init $config_file"
     
@@ -633,7 +648,7 @@ setup_shoestring() {
             print_info "node.key.pem をコピー: $dest_node_key"
         fi
         log "python3 -m shoestring import-bootstrap --config \"$config_file\" --bootstrap \"$BOOTSTRAP_DIR\" --include-node-key" "DEBUG"
-        python3 -m shoestring import-bootstrap --config "$config_file" --bootstrap "$BOOTSTRAP_DIR" --include-node-key > "$SHOESTRING_DIR/import_bootstrap.log" 2>&1 || error_exit "import-bootstrap に失敗。ログを確認してね: cat $SHOESTRING_DIR/import_bootstrap.log"
+        python3 -m shoestring import-bootstrap --config "$config_file" --bootstrap \"$BOOTSTRAP_DIR\" --include-node-key > "$SHOESTRING_DIR/import_bootstrap.log" 2>&1 || error_exit "import-bootstrap に失敗。ログを確認してね: cat $SHOESTRING_DIR/import_bootstrap.log"
         if [ ! -f "$ca_key_path" ]; then
             print_info "新しい ca.key.pem を生成するよ"
             log "新しい ca.key.pem を生成するよ" "INFO"
@@ -645,7 +660,7 @@ setup_shoestring() {
             echo "$private_key" > "$temp_key_file"
             log "プライベートキー（最初の12文字）: ${private_key:0:12}..." "DEBUG"
             python3 -m shoestring pemtool --input "$temp_key_file" --output "$ca_key_path" >> "$SHOESTRING_DIR/pemtool.log" 2>&1 || error_exit "ca.key.pem の生成に失敗したよ。ログを確認してね: cat $SHOESTRING_DIR/pemtool.log"
-            rm -f "$temp_key_file"
+            rm -f" "$temp_key_file"
             print_info "ca.key.pem を生成: $ca_key_path"
         else
             print_info "既存の ca.key.pem を使用: $ca_key_path"
@@ -658,7 +673,7 @@ setup_shoestring() {
         if [ -z "$private_key" ]; then
             error_exit "プライベートキーの生成に失敗したよ。OpenSSLを確認してね: openssl rand -hex 32"
         fi
-        local temp_key_file=$(mktemp)
+        local temp_key_file=$(mktemp")
         echo "$private_key" > "$temp_key_file"
         log "プライベートキー（最初の12文字）: ${private_key:0:12}..." "DEBUG"
         python3 -m shoestring pemtool --input "$temp_key_file" --output "$ca_key_path" >> "$SHOESTRING_DIR/pemtool.log" 2>&1 || error_exit "ca.key.pem の生成に失敗したよ。ログを確認してね: cat $SHOESTRING_DIR/pemtool.log"
@@ -687,16 +702,16 @@ setup_shoestring() {
     print_info "shoestring.ini の [imports] を更新するよ"
     local absolute_harvesting_escaped=$(printf '%s' "$absolute_harvesting" | sed 's/[\/&]/\\&/g')
     local absolute_node_key_escaped=$(printf '%s' "$absolute_node_key" | sed 's/[\/&]/\\&/g')
-    sed -i "/^\[imports]/,/^\[.*]/ s|^harvester =.*|harvester = $absolute_harvesting_escaped|" "$config_file"
-    sed -i "/^\[imports]/,/^\[.*]/ s|^nodeKey =.*|nodeKey = $absolute_node_key_escaped|" "$config_file"
-    grep -A 5 '^\[imports]' "$config_file" > "$SHOESTRING_DIR/imports_snippet.log" 2>&1
-    log "[imports] 更新後: $(cat "$SHOESTRING_DIR/imports_snippet.log" | sed 's/["`/]/\\&/g')" "DEBUG"
+    sed -i "/^\[imports\]/,/^\[.*\]/ s|^harvesting =.*|harvesting = $absolute_harvesting_escaped|" "$config_file"
+    sed -i "/^\[imports\]/,/^\[.*\]/ s|^nodeKey =.*|nodeKey = $absolute_node_key_escaped|" "$config_file"
+    grep -A 5 '^\[imports\]' "$config_file" > "$SHOESTRING_DIR/imports_snippet.log" 2>&1
+    log "[imports] 更新後: $(cat "$SHOESTRING_DIR/imports_snippet.log" | sed 's/["`]/\\&/g')" "DEBUG"
     
     validate_ini "$config_file"
     if ! $SKIP_CONFIRM; then
         confirm_and_edit_ini "$config_file"
     fi
-    print_info "shoestring.ini を生成: $config_file"
+    print_info "shoestring.ini を生成しました: $config_file"
     
     local overrides_file="$shoestring_subdir/overrides.ini"
     print_info "overrides.ini を生成するよ"
@@ -724,7 +739,7 @@ EOF
     if ! $SKIP_CONFIRM; then
         confirm_and_edit_ini "$overrides_file"
     fi
-    print_info "overrides.ini を生成しました。"
+    print_info "overrides.ini を生成しました"
     
     print_info "Shoestring のセットアップを実行するよ"
     log "python3 -m shoestring setup --ca-key-path \"$ca_key_path\" --config \"$config_file\" --overrides \"$overrides_file\" --directory \"$shoestring_subdir\" --package $network_type" "DEBUG"
