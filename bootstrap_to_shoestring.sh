@@ -681,8 +681,7 @@ setup_shoestring() {
         mv "$overrides_file" "$overrides_file.bak-$(date +%Y%m%d_%H%M%S)"
         print_info "既存の overrides.ini をバックアップ: $overrides_file.bak-$(date +%Y%m%d_%H%M%S)"
     fi
-    cat > "$overrides_file" << 'EOF'
-
+cat > "$overrides_file" << 'EOF'
 [user.account]
 enableDelegatedHarvestersAutoDetection = true
 
@@ -701,7 +700,7 @@ EOF
     sed -i "s/\$host_name/$host_name/g" "$overrides_file"
     sed -i "s/\$friendly_name/$friendly_name/g" "$overrides_file"
     
-    #log "overrides.ini 内容: $(cat "$overrides_file" | sed 's/["'"]/\\&/g')" "DEBUG"
+    log "overrides.ini 内容: $(cat "$overrides_file" | sed 's/["'"]/\\&/g')" "DEBUG"
     validate_ini "$overrides_file"
     if ! $SKIP_CONFIRM; then
         confirm_and_edit_ini "$overrides_file"
