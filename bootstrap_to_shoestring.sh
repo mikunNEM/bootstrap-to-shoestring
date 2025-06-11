@@ -24,10 +24,10 @@
 #
 # FAQ:
 # - エラー時: setup.log を確認（tail -f ~/work/shoestring/setup.log）
-# - 仮想環境欠落: rm -rf ~/work/shoestring/shoestring-env; python3 -m venv ~/work/shoestring/shoestring-env
-# - 権限エラー: chmod u+rwx ~/work/shoestring; chown $(whoami):$(whoami) ~/work/shoestring
-# - import-bootstrapエラー: cat ~/work/shoestring/import_bootstrap.log
-# - setupエラー: cat ~/work/shoestring/setup_shoestring.log
+# - 仮想環境欠落: rm -rf ~/shoestring/shoestring-env; python3 -m venv ~/shoestring/shoestring-env
+# - 権限エラー: chmod u+rwx ~/shoestring; chown $(whoami):$(whoami) ~/shoestring
+# - import-bootstrapエラー: cat ~/shoestring/import_bootstrap.log
+# - setupエラー: cat ~/shoestring/setup_shoestring.log
 # - shoestring.iniエラー: find /home/mikun/work -name shoestring.ini
 # - pipエラー: pip install --yes --verbose symbol-shoestring > pip.log 2>&1
 # - サポート: https://x.com/mikunNEM
@@ -60,8 +60,8 @@ SCRIPT_VERSION="2025-06-07-v20"
 
 # グローバル変数
 SHOESTRING_DIR=""
-SHOESTRING_DIR_DEFAULT="$HOME/work/shoestring"
-BOOTSTRAP_DIR_DEFAULT="$HOME/work/symbol-bootstrap/target"
+SHOESTRING_DIR_DEFAULT="$HOME/shoestring"
+BOOTSTRAP_DIR_DEFAULT="$HOME/symbol-bootstrap/target"
 BACKUP_DIR_DEFAULT="$HOME/symbol-bootstrap-backup-$(date +%Y%m%d_%H%M%S)"
 ENCRYPTED=false
 SKIP_CONFIRM=false
@@ -300,7 +300,7 @@ auto_detect_dirs() {
     
     # Bootstrap ディレクトリ
     local bootstrap_dirs=(
-        "$HOME/work/symbol-bootstrap/target"
+        "$HOME/symbol-bootstrap/target"
         "$HOME/symbol-bootstrap/target"
         "$(find "$HOME" -maxdepth 3 -type d -name target 2>/dev/null | grep symbol-bootstrap | head -n 1)"
     )
