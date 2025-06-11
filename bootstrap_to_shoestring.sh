@@ -92,7 +92,7 @@ check_apt_locks() {
         fi
     done
     # dpkg の修復
-    sudo dpkg --configure -a" "$SHOESTRING_DIR/setup.log" 2>&1 || print_warning "dpkg の修復に失敗しましたが、続行します。"
+    sudo dpkg --configure -a >> "$SHOESTRING_DIR/setup.log" 2>&1 || print_warning "dpkg の修復に失敗しましたが、続行します。"
 }
 
 # ディレクトリ権限の修正
@@ -142,195 +142,179 @@ retry_command() {
 
 # 依存のインストール
 install_dependencies() {
-  print_info "依存ツールをチェック＆インストールするよ"
-  log "version $SCRIPT_VERSION" "INFO"
+    print_info "依存ツールをチェック＆インストールするよ"
+    log "version $SCRIPT_VERSION" "INFO"
 
-  # OS 判定
-  local os_name="unknown"
-  if [ -f /etc/os-release ]; then
-    os_name=$(grep -E '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
-  elif [ "$(uname -s)" = "Darwin" ]; then
-    os_name="macos"
-  fi
-  print_info "OS: $os_name"
-
-  # Ubuntu/Debian 環境では Python3.12 を導入
-  if [[ $os_name == "ubuntu" || $os_name == "debian" ]]; then
-    print_info "APT ロックファイルをチェックして削除..."
-    check_apt_locks
-    # python3-apt をインストール（apt_pkg エラー対策）
-    retry_command "sudo apt-get install -y python3-apt"
-    retry_command "sudo apt-get update"
-    retry_command "sudo apt-get install -y software-properties-common"
-    retry_command "sudo add-apt-repository --yes ppa:deadsnakes/ppa"
-    retry_command "sudo apt-get update"
-    # Python 3.12 関連パッケージをインストール
-    retry_command "sudo apt-get install -y python3.12 python3.12-venv python3.12-dev python3-distutils python3-pip build-essential libssl-dev"
-    # /etc/alternatives の権限を確認・修正
-    print_info "Checking /etc/alternatives permissions..."
-    sudo chown root:root /etc/alternatives
-    sudo chmod 755 /etc/alternatives
-    # python3 リンクの破損をチェック
-    if update-alternatives --display python3 2>/dev/null | grep -q "broken"; then
-      print_warning "python3 link group is broken. Resetting..."
-      sudo update-alternatives --remove-all python3
+    # OS 判定
+    local os_name="unknown"
+    if [ -f /etc/os-release ]; then
+        os_name=$(grep -E '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
+    elif [ "$(uname -s)" = "Darwin" ]; then
+        os_name="macos"
     fi
-    # python3 コマンドを python3.12 にリンク
-    retry_command "sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 2"
-    # Python 3.12 のバージョンを確認
-    if ! /usr/bin/python3.12 --version 2>/dev/null | grep -q "3.12"; then
-      print_warning "Python 3.12 が正しくインストールされていません。再度インストールを試みます..."
-      retry_command "sudo apt-get install --reinstall -y python3.12 python3.12-venv"
-    fi
-    print_info "Python 3.12: $(/usr/bin/python3.12 --version)"
-  else
-    # macOS/CentOS の場合は従来方式
-    if [ "$os_name" = "macos" ]; then
-      retry_command "brew install python"
-    elif [ "$os_name" = "centos" ]; then
-      retry_command "yum install -y python3 python3-venv python3-pip"
-    fi
-  fi
-  print_info "Python: $(python3 --version)"
+    print_info "OS: $os_name"
 
-  # Node.js
-  if ! command -v node >/dev/null 2>&1; then
-    print_warning "Node.js が無いのでインストール"
-    case $os_name in
-      ubuntu|debian) retry_command "sudo apt-get install -y nodejs npm" ;;
-      centos)        retry_command "yum install -y nodejs npm" ;;
-      macos)         retry_command "brew install node" ;;
-      *)             error_exit "Node.js を手動でインストールしてください。" ;;
-    esac
-  fi
-  print_info "Node.js: $(node -v)"
-
-  # Docker Compose
-  if ! command -v docker compose >/dev/null 2>&1; then
-    print_warning "Docker Compose が無いのでインストール"
-    case $os_name in
-      ubuntu|debian) retry_command "sudo apt-get install -y docker-compose-plugin" ;;
-      centos)        retry_command "yum install -y docker-compose" ;;
-      macos)         retry_command "brew install docker-compose" ;;
-      *)             error_exit "Docker Compose を手動でインストールしてください。" ;;
-    esac
-  fi
-  print_info "Docker Compose: $(docker compose version)"
-
-  # pv（進捗表示用、オプション）
-  if ! command -v pv >/dev/null 2>&1; then
-    print_warning "pv が見つからないよ。データコピーの進捗表示に使うからインストールするね！"
-    case $os_name in
-      ubuntu|debian)
+    # Ubuntu/Debian 環境では Python3.12 を導入
+    if [[ $os_name == "ubuntu" || $os_name == "debian" ]]; then
+        print_info "APT ロックファイルをチェックして削除..."
         check_apt_locks
+        retry_command "sudo apt-get install -y python3-apt"
         retry_command "sudo apt-get update"
-        retry_command "sudo apt-get install -y pv"
-        ;;
-      centos)
-        retry_command "sudo yum install -y pv"
-        ;;
-      macos)
-        retry_command "brew install pv"
-        ;;
-      *)
-        print_warning "pv のインストールはスキップ。進捗表示なしでコピーするよ。"
-        ;;
-    esac
-  fi
-  if command -v pv >/dev/null 2>&1; then
-    print_info "pv: $(pv --version | head -n 1)"
-  fi
-
-  # OpenSSL（ca.key.pem 生成用）
-  if ! command -v openssl >/dev/null 2>&1; then
-    print_warning "OpenSSL が見つからないよ。ca.key.pem 生成に必要だからインストールするね！"
-    case $os_name in
-      ubuntu|debian)
-        check_apt_locks
+        retry_command "sudo apt-get install -y software-properties-common"
+        retry_command "sudo add-apt-repository --yes ppa:deadsnakes/ppa"
         retry_command "sudo apt-get update"
-        retry_command "sudo apt-get install -y openssl"
-        ;;
-      centos)
-        retry_command "sudo yum install -y openssl"
-        ;;
-      macos)
-        retry_command "brew install openssl"
-        ;;
-      *)
-        error_exit "サポートされていないOS: $os_name。OpenSSL をインストールしてね: https://www.openssl.org/"
-        ;;
-    esac
-  fi
-  local openssl_version=$(openssl version)
-  print_info "OpenSSL: $openssl_version"
+        retry_command "sudo apt-get install -y python3.12 python3.12-venv python3.12-dev python3-distutils python3-pip build-essential libssl-dev"
+        print_info "Checking /etc/alternatives permissions..."
+        sudo chown root:root /etc/alternatives
+        sudo chmod 755 /etc/alternatives
+        if update-alternatives --display python3 2>/dev/null | grep -q "broken"; then
+            print_warning "python3 link group is broken. Resetting..."
+            sudo update-alternatives --remove-all python3
+        fi
+        retry_command "sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 2"
+        if ! /usr/bin/python3.12 --version 2>/dev/null | grep -q "3.12"; then
+            print_warning "Python 3.12 が正しくインストールされていません。再度インストールを試みます..."
+            retry_command "sudo apt-get install --reinstall -y python3.12 python3.12-venv"
+        fi
+        print_info "Python 3.12: $(/usr/bin/python3.12 --version)"
+    else
+        if [ "$os_name" = "macos" ]; then
+            retry_command "brew install python"
+        elif [ "$os_name" = "centos" ]; then
+            retry_command "yum install -y python3 python3-venv python3-pip"
+        fi
+    fi
+    print_info "Python: $(python3 --version)"
 
-  # 仮想環境
-  local venv_dir="$SHOESTRING_DIR/shoestring-env"
-  print_info "仮想環境パス: $venv_dir"
-  fix_dir_permissions "$SHOESTRING_DIR"
-  if [ -d "$venv_dir" ]; then
-    print_warning "既存の仮想環境が見つかりました: $venv_dir。削除して再作成します..."
-    rm -rf "$venv_dir"
-  fi
-  if [ ! -f "$venv_dir/bin/activate" ]; then
-    print_info "仮想環境を作成するよ..."
-    # python3.12 を明示的に使用
-    /usr/bin/python3.12 -m venv "$venv_dir" >> "$SHOESTRING_DIR/setup.log" 2>&1 || {
-      print_warning "仮想環境の作成に失敗しました。pip なしで再試行します..."
-      /usr/bin/python3.12 -m venv --without-pip "$venv_dir" >> "$SHOESTRING_DIR/setup.log" 2>&1 || error_exit "仮想環境の作成に失敗: $venv_dir。ログを確認してください: cat $SHOESTRING_DIR/setup.log"
-      source "$venv_dir/bin/activate"
-      # pip を手動でインストール
-      curl https://bootstrap.pypa.io/get-pip.py -o "$SHOESTRING_DIR/get-pip.py" >> "$SHOESTRING_DIR/setup.log" 2>&1
-      /usr/bin/python3.12 "$SHOESTRING_DIR/get-pip.py" >> "$SHOESTRING_DIR/setup.log" 2>&1 || error_exit "pip のインストールに失敗しました。ログを確認してください: cat $SHOESTRING_DIR/setup.log"
-      rm -f "$SHOESTRING_DIR/get-pip.py"
-    }
-    source "$venv_dir/bin/activate"
-    # pip バージョンチェック
-    local pip_version=$(python3 -m pip --version 2>>"$SHOESTRING_DIR/setup.log")
-    print_info "pip バージョン: $pip_version"
-    retry_command "pip install --upgrade pip"
-    # symbol-shoestring をインストール
-    print_info "symbol-shoestring をインストール中…"
-    set +e
-    pip install symbol-shoestring==0.2.1 >>"$SHOESTRING_DIR/setup.log" 2>&1
-    if [ $? -ne 0 ]; then
-      print_warning "symbol-shoestring のビルドに失敗しました。Python 開発ヘッダをインストールします…"
-      check_apt_locks
-      retry_command "sudo apt-get update"
-      retry_command "sudo apt-get install -y python3.12-dev build-essential libssl-dev"
-      print_info "再度 symbol-shoestring をインストール中…"
-      pip install symbol-shoestring==0.2.1 >>"$SHOESTRING_DIR/setup.log" 2>&1
-      if [ $? -ne 0 ]; then
-        error_exit "symbol-shoestring の再インストールにも失敗しました。ログを確認してください: cat $SHOESTRING_DIR/setup.log"
-      fi
-      print_success "symbol-shoestring のインストールに成功しました！"
-    else
-      print_success "symbol-shoestring のインストールに成功しました！"
+    # Node.js
+    if ! command -v node >/dev/null 2>&1; then
+        print_warning "Node.js が無いのでインストール"
+        case $os_name in
+            ubuntu|debian) retry_command "sudo apt-get install -y nodejs npm" ;;
+            centos)        retry_command "yum install -y nodejs npm" ;;
+            macos)         retry_command "brew install node" ;;
+            *)             error_exit "Node.js を手動でインストールしてください。" ;;
+        esac
     fi
-    # setuptools をインストール（distutils の代替）
-    pip install setuptools >>"$SHOESTRING_DIR/setup.log" 2>&1 || print_warning "setuptools のインストールに失敗しましたが、続行します。"
-    set -e
-    
-    # インストール確認
-    pip list > "$SHOESTRING_DIR/pip_list.log" 2>&1
-    if grep -q symbol-shoestring "$SHOESTRING_DIR/pip_list.log"; then
-      print_info "symbol-shoestring インストール済み: $(grep symbol-shoestring "$SHOESTRING_DIR/pip_list.log")"
-      local shoestring_version=$(pip show symbol-shoestring | grep Version | awk '{print $2}')
-      log "symbol-shoestring version: $shoestring_version" "INFO"
-    else
-      log "pip list: $(cat "$SHOESTRING_DIR/pip_list.log")" "DEBUG"
-      error_exit "symbol-shoestring が未インストール。インストールコマンド: pip install symbol-shoestring"
+    print_info "Node.js: $(node -v)"
+
+    # Docker Compose
+    if ! command -v docker compose >/dev/null 2>&1; then
+        print_warning "Docker Compose が無いのでインストール"
+        case $os_name in
+            ubuntu|debian) retry_command "sudo apt-get install -y docker-compose-plugin" ;;
+            centos)        retry_command "yum install -y docker-compose" ;;
+            macos)         retry_command "brew install docker-compose" ;;
+            *)             error_exit "Docker Compose を手動でインストールしてください。" ;;
+        esac
     fi
-    deactivate
-  fi
-  print_info "仮想環境: $venv_dir"
+    print_info "Docker Compose: $(docker compose version)"
+
+    # pv（進捗表示用、オプション）
+    if ! command -v pv >/dev/null 2>&1; then
+        print_warning "pv が見つからないよ。データコピーの進捗表示に使うからインストールするね！"
+        case $os_name in
+            ubuntu|debian)
+                check_apt_locks
+                retry_command "sudo apt-get update"
+                retry_command "sudo apt-get install -y pv"
+                ;;
+            centos)
+                retry_command "sudo yum install -y pv"
+                ;;
+            macos)
+                retry_command "brew install pv"
+                ;;
+            *)
+                print_warning "pv のインストールはスキップ。進捗表示なしでコピーするよ。"
+                ;;
+        esac
+    fi
+    if command -v pv >/dev/null 2>&1; then
+        print_info "pv: $(pv --version | head -n 1)"
+    fi
+
+    # OpenSSL（ca.key.pem 生成用）
+    if ! command -v openssl >/dev/null 2>&1; then
+        print_warning "OpenSSL が見つからないよ。ca.key.pem 生成に必要だからインストールするね！"
+        case $os_name in
+            ubuntu|debian)
+                check_apt_locks
+                retry_command "sudo apt-get update"
+                retry_command "sudo apt-get install -y openssl"
+                ;;
+            centos)
+                retry_command "sudo yum install -y openssl"
+                ;;
+            macos)
+                retry_command "brew install openssl"
+                ;;
+            *)
+                error_exit "サポートされていないOS: $os_name。OpenSSL をインストールしてね: https://www.openssl.org/"
+                ;;
+        esac
+    fi
+    local openssl_version=$(openssl version)
+    print_info "OpenSSL: $openssl_version"
+
+    # 仮想環境
+    local venv_dir="$SHOESTRING_DIR/shoestring-env"
+    print_info "仮想環境パス: $venv_dir"
+    fix_dir_permissions "$SHOESTRING_DIR"
+    if [ -d "$venv_dir" ]; then
+        print_warning "既存の仮想環境が見つかりました: $venv_dir。削除して再作成します..."
+        rm -rf "$venv_dir"
+    fi
+    if [ ! -f "$venv_dir/bin/activate" ]; then
+        print_info "仮想環境を作成するよ..."
+        /usr/bin/python3.12 -m venv "$venv_dir" >> "$SHOESTRING_DIR/setup.log" 2>&1 || {
+            print_warning "仮想環境の作成に失敗しました。pip なしで再試行します..."
+            /usr/bin/python3.12 -m venv --without-pip "$venv_dir" >> "$SHOESTRING_DIR/setup.log" 2>&1 || error_exit "仮想環境の作成に失敗: $venv_dir。ログを確認してください: cat $SHOESTRING_DIR/setup.log"
+            source "$venv_dir/bin/activate"
+            curl https://bootstrap.pypa.io/get-pip.py -o "$SHOESTRING_DIR/get-pip.py" >> "$SHOESTRING_DIR/setup.log" 2>&1
+            /usr/bin/python3.12 "$SHOESTRING_DIR/get-pip.py" >> "$SHOESTRING_DIR/setup.log" 2>&1 || error_exit "pip のインストールに失敗しました。ログを確認してください: cat $SHOESTRING_DIR/setup.log"
+            rm -f "$SHOESTRING_DIR/get-pip.py"
+        }
+        source "$venv_dir/bin/activate"
+        local pip_version=$(python3 -m pip --version 2>>"$SHOESTRING_DIR/setup.log")
+        print_info "pip バージョン: $pip_version"
+        retry_command "pip install --upgrade pip"
+        print_info "symbol-shoestring をインストール中…"
+        set +e
+        pip install symbol-shoestring==0.2.1 >>"$SHOESTRING_DIR/setup.log" 2>&1
+        if [ $? -ne 0 ]; then
+            print_warning "symbol-shoestring のビルドに失敗しました。Python 開発ヘッダをインストールします…"
+            check_apt_locks
+            retry_command "sudo apt-get update"
+            retry_command "sudo apt-get install -y python3.12-dev build-essential libssl-dev"
+            print_info "再度 symbol-shoestring をインストール中…"
+            pip install symbol-shoestring==0.2.1 >>"$SHOESTRING_DIR/setup.log" 2>&1
+            if [ $? -ne 0 ]; then
+                error_exit "symbol-shoestring の再インストールにも失敗しました。ログを確認してください: cat $SHOESTRING_DIR/setup.log"
+            fi
+            print_success "symbol-shoestring のインストールに成功しました！"
+        else
+            print_success "symbol-shoestring のインストールに成功しました！"
+        fi
+        pip install setuptools >>"$SHOESTRING_DIR/setup.log" 2>&1 || print_warning "setuptools のインストールに失敗しましたが、続行します。"
+        set -e
+        pip list > "$SHOESTRING_DIR/pip_list.log" 2>&1
+        if grep -q symbol-shoestring "$SHOESTRING_DIR/pip_list.log"; then
+            print_info "symbol-shoestring インストール済み: $(grep symbol-shoestring "$SHOESTRING_DIR/pip_list.log")"
+            local shoestring_version=$(pip show symbol-shoestring | grep Version | awk '{print $2}')
+            log "symbol-shoestring version: $shoestring_version" "INFO"
+        else
+            log "pip list: $(cat "$SHOESTRING_DIR/pip_list.log")" "DEBUG"
+            error_exit "symbol-shoestring が未インストール。インストールコマンド: pip install symbol-shoestring"
+        fi
+        deactivate
+    fi
+    print_info "仮想環境: $venv_dir"
 }
 
 # ディレクトリ自動検出
 auto_detect_dirs() {
     print_info "ディレクトリを自動で探すよ！"
-    
-    # Bootstrap ディレクトリ
     local bootstrap_dirs=(
         "$HOME/symbol-bootstrap/target"
         "$HOME/symbol-bootstrap"
@@ -343,8 +327,6 @@ auto_detect_dirs() {
             break
         fi
     done
-
-    # Shoestring ディレクトリ
     local shoestring_dirs=(
         "$HOME/shoestring"
     )
@@ -366,7 +348,6 @@ auto_detect_dirs() {
 # ユーザー情報の収集
 collect_user_info() {
     print_info "移行に必要な情報を集めるよ！"
-    
     if $SKIP_CONFIRM; then
         SHOESTRING_DIR="$SHOESTRING_DIR_DEFAULT"
         BOOTSTRAP_DIR="$BOOTSTRAP_DIR_DEFAULT"
@@ -377,25 +358,21 @@ collect_user_info() {
         read -r input
         SHOESTRING_DIR="$(expand_tilde "${input:-$SHOESTRING_DIR_DEFAULT}")"
         fix_dir_permissions "$SHOESTRING_DIR"
-
         echo -e "${YELLOW}Bootstrap の target フォルダパスを入力してね:${NC}"
         echo -e "${YELLOW}デフォルト（Enterで選択）: $BOOTSTRAP_DIR_DEFAULT${NC}"
         read -r input
         BOOTSTRAP_DIR="$(expand_tilde "${input:-$BOOTSTRAP_DIR_DEFAULT}")"
-
         echo -e "${YELLOW}バックアップの保存先フォルダを入力してね:${NC}"
         echo -e "${YELLOW}デフォルト（Enterで選択）: $BACKUP_DIR_DEFAULT${NC}"
         read -r input
         BACKUP_DIR="$(expand_tilde "${input:-$BACKUP_DIR_DEFAULT}")"
     fi
-
     validate_dir "$BOOTSTRAP_DIR"
     if [ ! -d "$BACKUP_DIR" ]; then
         mkdir -p "$BACKUP_DIR" || error_exit "$BACKUP_DIR の作成に失敗"
         print_info "$BACKUP_DIR を作成したよ！"
     fi
     print_info "バックアップフォルダ: $BACKUP_DIR"
-
     if $SKIP_CONFIRM; then
         ENCRYPTED=false
     else
@@ -486,7 +463,6 @@ extract_host() {
 detect_network_and_roles() {
     print_info "ネットワークとノード情報を検出するよ"
     log "Detecting network and roles from $BOOTSTRAP_DIR" "DEBUG"
-    
     local network_type=""
     if [ -f "$BOOTSTRAP_DIR/nodes/node/server-config/resources/config-network.properties" ]; then
         network_type=$(grep 'identifier' "$BOOTSTRAP_DIR/nodes/node/server-config/resources/config-network.properties" | cut -d'=' -f2 | tr -d ' ' | tr '[:upper:]' '[:lower:]')
@@ -500,12 +476,10 @@ detect_network_and_roles() {
             log "Invalid network type in config-network.properties: $network_type" "WARNING"
         fi
     fi
-    
     if [ -z "$network_type" ]; then
         network_type="sai"
         log "Network type set to default: $network_type" "INFO"
     fi
-    
     local friendly_name
     local config_file="$BOOTSTRAP_DIR/nodes/node/server-config/resources/config-node.properties"
     if [ -f "$config_file" ]; then
@@ -520,14 +494,11 @@ detect_network_and_roles() {
         log "$config_file not found" "WARNING"
         friendly_name="mikun-$network_type-node"
     fi
-    
     if [ -z "$friendly_name" ]; then
         friendly_name="mikun-$network_type-node"
         log "friendly_name set to: $friendly_name" "INFO"
     fi
-    
     log "Extracted - friendlyName: $friendly_name" "INFO"
-    
     echo "$network_type $friendly_name"
 }
 
@@ -565,7 +536,7 @@ check_disk_space() {
 # データコピー
 copy_data() {
     local src_db="$BOOTSTRAP_DIR/databases/db"
-    local src_data="$("$BOOTSTRAP_DIR/nodes/node/data"
+    local src_data="$BOOTSTRAP_DIR/nodes/node/data"
     local dest_db="$SHOESTRING_DIR/shoestring/dbdata"
     local dest_data="$SHOESTRING_DIR/shoestring/data"
     
@@ -627,27 +598,21 @@ copy_data() {
 # Shoestring セットアップ
 setup_shoestring() {
     print_info "Shoestring ノードをセットアップするよ"
-    
     source "$SHOESTRING_DIR/shoestring-env/bin/activate" || error_exit "仮想環境の有効化に失敗"
-    
     local shoestring_subdir="$SHOESTRING_DIR/shoestring"
     mkdir -p "$shoestring_subdir" || error_exit "$shoestring_subdir の作成に失敗"
     fix_dir_permissions "$shoestring_subdir"
-    
     local network_type friendly_name
     IFS=' ' read -r network_type friendly_name <<< "$(detect_network_and_roles)"
     print_info "検出したネットワーク: $network_type、ノード名: $friendly_name"
     log "Parsed - network_type: $network_type, friendly_name: $friendly_name" "DEBUG"
-    
     local host_name
     host_name=$(extract_host)
     print_info "検出したホスト: $host_name"
-    
     local config_file="$shoestring_subdir/shoestring.ini"
     print_info "shoestring.ini を初期化するよ"
     log "python3 -m shoestring init \"$config_file\" --package $network_type" "DEBUG"
     python3 -m shoestring init "$config_file" --package "$network_type" > "$SHOESTRING_DIR/install_shoestring.log" 2>&1 || error_exit "shoestring.ini の初期化に失敗。手動で確認してね: python3 -m shoestring init $config_file"
-    
     local ca_key_path="$shoestring_subdir/ca.key.pem"
     check_node_key
     if [ "$NODE_KEY_FOUND" = true ]; then
@@ -693,7 +658,6 @@ setup_shoestring() {
         log "python3 -m shoestring import-bootstrap --config \"$config_file\" --bootstrap \"$BOOTSTRAP_DIR\"" "DEBUG"
         python3 -m shoestring import-bootstrap --config "$config_file" --bootstrap "$BOOTSTRAP_DIR" > "$SHOESTRING_DIR/import_bootstrap.log" 2>&1 || error_exit "import-bootstrap に失敗。ログを確認してね: cat $SHOESTRING_DIR/import_bootstrap.log"
     fi
-    
     local src_harvesting="$BOOTSTRAP_DIR/nodes/node/server-config/resources/config-harvesting.properties"
     local dest_harvesting="$shoestring_subdir/config-harvesting.properties"
     if [ -f "$src_harvesting" ]; then
@@ -702,7 +666,6 @@ setup_shoestring() {
     else
         error_exit "config-harvesting.properties が見つからないよ: $src_harvesting"
     fi
-    
     local absolute_harvesting=$(realpath "$dest_harvesting")
     local absolute_node_key
     if [ "$NODE_KEY_FOUND" = true ]; then
@@ -717,13 +680,11 @@ setup_shoestring() {
     sed -i "/^\[imports\]/,/^\[.*\]/ s|^nodeKey\s*=.*|nodeKey = $absolute_node_key_escaped|" "$config_file"
     grep -A 5 '^\[imports\]' "$config_file" > "$SHOESTRING_DIR/imports_snippet.log" 2>&1
     log "[imports] 更新後: $(cat "$SHOESTRING_DIR/imports_snippet.log" | sed 's/["'"]/\\&/g')" "DEBUG"
-    
     validate_ini "$config_file"
     if ! $SKIP_CONFIRM; then
         confirm_and_edit_ini "$config_file"
     fi
     print_info "shoestring.ini を生成: $config_file"
-    
     local overrides_file="$shoestring_subdir/overrides.ini"
     print_info "overrides.ini を生成するよ"
     if [ -f "$overrides_file" ]; then
@@ -751,20 +712,16 @@ EOF
         confirm_and_edit_ini "$overrides_file"
     fi
     print_info "overrides.ini を生成しました"
-
     print_info "Shoestring のセットアップを実行するよ"
     log "python3 -m shoestring setup --ca-key-path \"$ca_key_path\" --config \"$config_file\" --overrides \"$overrides_file\" --directory \"$shoestring_subdir\" --package $network_type" "DEBUG"
     python3 -m shoestring setup --ca-key-path "$ca_key_path" --config "$config_file" --overrides "$overrides_file" --directory "$shoestring_subdir" --package "$network_type" > "$SHOESTRING_DIR/setup_shoestring.log" 2>&1 || error_exit "Shoestring ノードのセットアップに失敗。ログを確認してね: cat $SHOESTRING_DIR/setup_shoestring.log"
-    
     copy_data
-    
     print_info "Shoestring ノードを起動するよ"
     cd "$shoestring_subdir" || error_exit "ディレクトリ移動に失敗したよ: $shoestring_subdir"
     print_info "Docker の古いリソースをクリアするよ(ネットワーク競合を回避)"
     docker system prune -a --volumes --force >> "$SHOESTRING_DIR/docker_cleanup.log" 2>&1
     docker-compose up -d > "$SHOESTRING_DIR/docker_compose.log" 2>&1 || error_exit "Shoestring ノードの起動に失敗。ログを確認してね: cat $SHOESTRING_DIR/docker_compose.log"
     print_info "Shoestring ノードを起動したよ！"
-    
     deactivate
 }
 
@@ -773,7 +730,6 @@ show_post_migration_guide() {
     print_info "Post-migration guideが終わった！これからやること："
     echo -e "${GREEN}Symbol Bootstrap から Shoestring への移行が完了！${NC}"
     echo
-    
     print_info "大事なファイル："
     if [ "$NODE_KEY_FOUND" = true ]; then
         echo "  - ノード秘密鍵: $SHOESTRING_DIR/shoestring/node.key.pem"
@@ -810,7 +766,6 @@ show_post_migration_guide() {
 main() {
     print_info "Symbol Bootstrap から Shoestring への移行を始めるよ！"
     log "Starting migration process..." "INFO"
-    
     auto_detect_dirs
     install_dependencies
     collect_user_info
@@ -820,7 +775,6 @@ main() {
     ADDRESSES_YML="$BOOTSTRAP_DIR/addresses.yml"
     SHOESTRING_RESOURCES="$SHOESTRING_DIR/shoestring"
     LOG_FILE="$SHOESTRING_DIR/setup.log"
-    
     validate_file "$ADDRESSES_YML"
     create_backup
     setup_shoestring
