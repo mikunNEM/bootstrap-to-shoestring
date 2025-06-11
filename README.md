@@ -17,7 +17,7 @@
     cd ~/work/shoestring/
     ```
 
-2. GitHub リポジトリからスクリプト本体とユーティリティファイルを取得します。
+2. GitHub リポジトリからスクリプト本体とユーティリティファイルの２つをダウンロードします。
 
     
     `bootstrap_to_shoestring.sh` をダウンロード
