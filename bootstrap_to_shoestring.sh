@@ -567,7 +567,7 @@ copy_data() {
         mkdir -p "$dest_data" || error_exit "$dest_data の作成に失敗"
         fix_dir_permissions "$dest_data"
         if command -v pv >/dev/null 2>&1; then
-            echo -e "${YELLOW}チェーンデータコピー中... sudo のパスワードを入力してね:${NC}"
+            echo -e "${YELLOW}チェーンデータコ its ピー中... sudo のパスワードを入力してね:${NC}"
             print_info "チェーンデータをコピー中（進捗は画面に表示）…"
             sudo tar -C "$src_data" -cf - . 2>>"$SHOESTRING_DIR/data_copy.log" \
               | pv \
@@ -669,7 +669,7 @@ setup_shoestring() {
     sed -i "/^\[imports\]/,/^\[.*\]/ s|^harvesting\s*=.*|harvesting = $absolute_harvesting_escaped|" "$config_file"
     sed -i "/^\[imports\]/,/^\[.*\]/ s|^nodeKey\s*=.*|nodeKey = $absolute_node_key_escaped|" "$config_file"
     grep -A 5 '^\[imports\]' "$config_file" > "$SHOESTRING_DIR/imports_snippet.log" 2>&1
-    log "[imports] 更新後: $(cat "$SHOESTRING_DIR/imports_snippet.log" | sed 's/["'"]/\\&/g')" "DEBUG"
+    log "[imports] 更新後: $(cat "$SHOESTRING_DIR/imports_snippet.log" | sed 's/["'\''$]/\\&/g')" "DEBUG"
     validate_ini "$config_file"
     if ! $SKIP_CONFIRM; then
         confirm_and_edit_ini "$config_file"
@@ -681,7 +681,7 @@ setup_shoestring() {
         mv "$overrides_file" "$overrides_file.bak-$(date +%Y%m%d_%H%M%S)"
         print_info "既存の overrides.ini をバックアップ: $overrides_file.bak-$(date +%Y%m%d_%H%M%S)"
     fi
-cat > "$overrides_file" << 'EOF'
+cat > "$overrides_file" << EOF
 [user.account]
 enableDelegatedHarvestersAutoDetection = true
 
@@ -697,10 +697,10 @@ host = $host_name
 friendlyName = $friendly_name
 EOF
     # 変数展開のための置換
-    sed -i "s/\$host_name/$host_name/g" "$overrides_file"
-    sed -i "s/\$friendly_name/$friendly_name/g" "$overrides_file"
+    #sed -i "s/\$host_name/$host_name/g" "$overrides_file"
+    #sed -i "s/\$friendly_name/$friendly_name/g" "$overrides_file"
     
-    log "overrides.ini 内容: $(cat "$overrides_file" | sed 's/["'"]/\\&/g')" "DEBUG"
+    log "overrides.ini 内容: $(cat "$overrides_file" | sed 's/["'\''$]/\\&/g')" "DEBUG"
     validate_ini "$overrides_file"
     if ! $SKIP_CONFIRM; then
         confirm_and_edit_ini "$overrides_file"
