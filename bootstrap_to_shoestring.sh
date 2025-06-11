@@ -138,26 +138,17 @@ install_dependencies() {
     local node_version=$(node -v)
     print_info "Node.js: $node_version"
 
-    # Python
+    # Python 開発ヘッダとビルドツール
+    print_info "Python3-dev build-essential libssl-dev を確保するよ"
+    retry_command "sudo apt-get update"
+    retry_command "sudo apt-get install -y python3-dev build-essential libssl-dev"
+
+    # Python 本体
     if ! command -v python3 >/dev/null 2>&1; then
         print_warning "Python3 が見つからないよ。インストールするね！"
         case $os_name in
             ubuntu|debian)
-                #retry_command "sudo apt update"
-                #retry_command "sudo apt install -y python3 python3-pip python3-venv"
-                #retry_command "sudo apt install -y python3-dev build-essential libssl-dev"
-                
-                # deadsnakes PPA から Python 3.12 を導入
-                retry_command "sudo apt update"
-                retry_command "sudo apt install -y software-properties-common"
-                retry_command "sudo add-apt-repository --yes ppa:deadsnakes/ppa"
-                retry_command "sudo apt update"
-                # Python 3.12 本体＋venv/dev/distutils 一式
-                retry_command "sudo apt install -y python3.12 python3.12-venv python3.12-dev python3.12-distutils"
-                # pip は get-pip.py でインストール
-                retry_command "curl -sS https://bootstrap.pypa.io/get-pip.py | sudo python3.12"
-                # ビルドツール
-                retry_command "sudo apt install -y build-essential libssl-dev"
+                retry_command "sudo apt install -y python3 python3-venv python3-pip"
                 ;;
             centos)
                 retry_command "sudo yum install -y python3 python3-pip"
@@ -166,12 +157,11 @@ install_dependencies() {
                 retry_command "brew install python"
                 ;;
             *)
-                error_exit "サポートされていないOS: $os_name。Python 3.10 以上をインストールしてね: https://python.org"
+                error_exit "サポートされていないOS: $os_name。Python3 をインストールしてね: https://python.org"
                 ;;
         esac
     fi
-    local python_version=$(python3 --version)
-    print_info "Python: $python_version"
+    print_info "Python: $(python3 --version)"
 
     # Docker Compose
     if ! command -v docker-compose >/dev/null 2>&1; then
@@ -179,7 +169,7 @@ install_dependencies() {
         case $os_name in
             ubuntu|debian)
                 retry_command "sudo apt update"
-                retry_command "sudo apt install -y docker-compose"
+                retry_command "sudo apt install -y docker-compose-plugin"
                 ;;
             centos)
                 retry_command "sudo yum install -y docker-compose"
@@ -192,8 +182,7 @@ install_dependencies() {
                 ;;
         esac
     fi
-    local docker_compose_version=$(docker-compose --version)
-    print_info "Docker Compose: $docker_compose_version"
+    print_info "Docker Compose: $(docker compose version || docker-compose --version)"
 
     # pv（進捗表示用、オプション）
     if ! command -v pv >/dev/null 2>&1; then
