@@ -252,8 +252,16 @@ install_dependencies() {
         local pip_version=$(python3 -m pip --version 2>>"$SHOESTRING_DIR/setup.log")
         print_info "pip バージョン: $pip_version"
         retry_command "pip install --upgrade pip"
-        # symbol-shoestring インストール
-        retry_command "pip install symbol-shoestring==0.2.1"
+        # symbol-shoestring インストール（ビルドエラーなら自動で dev ヘッダを追加）
+        if ! pip install symbol-shoestring==0.2.1 >>"$SHOESTRING_DIR/setup.log" 2>&1; then
+            print_warning "symbol-shoestring のビルド中にエラーが発生しました。Python 開発ヘッダをインストールします..."
+            sudo apt update
+            sudo apt install -y python3-dev build-essential libssl-dev >>"$SHOESTRING_DIR/setup.log" 2>&1
+            print_info "再度 symbol-shoestring をインストールします..."
+            retry_command "pip install symbol-shoestring==0.2.1"
+        else
+            print_success "symbol-shoestring インストール成功"
+        fi
         # インストール確認
         pip list > "$SHOESTRING_DIR/pip_list.log" 2>&1
         if grep -q symbol-shoestring "$SHOESTRING_DIR/pip_list.log"; then
