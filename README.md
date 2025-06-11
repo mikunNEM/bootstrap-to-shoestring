@@ -6,8 +6,8 @@
 
 - サーバーに SSH でログイン済みであること。  
 - `bash`, `curl` (または `wget`), `chmod` コマンドが利用可能であること。  
-- 移行先ディレクトリとして `~/work/shoestring/shoestring` フォルダを使用します。
-  (Bootstrapのあるディレクトリとは別の任意の場所に設定してください)
+- 移行先ディレクトリとして 例： `~/work/shoestring/shoestring` を使用します。
+  (Bootstrapとは別の任意の場所に作成してください)
 
 ## 1. 必要ファイルのダウンロード
 
