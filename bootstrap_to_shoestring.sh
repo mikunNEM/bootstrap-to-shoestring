@@ -314,9 +314,9 @@ auto_detect_dirs() {
 
     # Shoestring ディレクトリ
     local shoestring_dirs=(
-        "$HOME/work/shoestring"
+        # "$HOME/work/shoestring"
         "$HOME/shoestring"
-        "$HOME/shoestring-node"
+        # "$HOME/shoestring-node"
     )
     for dir in "${shoestring_dirs[@]}"; do
         if [ -d "$dir" ]; then
