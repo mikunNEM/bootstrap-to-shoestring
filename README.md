@@ -6,7 +6,7 @@
 
 - サーバーに SSH でログイン済みであること。  
 - `bash`, `curl` (または `wget`), `chmod` コマンドが利用可能であること。  
-- 移行先ディレクトリとして 例： `~/work/shoestring/shoestring` を使用します。
+- 移行先ディレクトリとして 例： `~/shoestring/` を使用します。
   (Bootstrapとは別の任意の場所に作成してください)
 
 ## 1. 必要ファイルのダウンロード
@@ -14,7 +14,7 @@
 1. `shoestring` フォルダへ移動します。
 
     ```bash
-    cd ~/work/shoestring/
+    cd ~/shoestring/
     ```
 
 2. GitHub リポジトリから `スクリプト本体` と `ユーティリティファイル` の２つをダウンロードします。
