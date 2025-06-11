@@ -54,7 +54,7 @@ set -eu
 source "$(dirname "$0")/utils.sh"
 
 # スクリプトバージョン
-SCRIPT_VERSION="2025-06-11-v22" # 更新されたバージョン
+SCRIPT_VERSION="2025-06-11-v23" # 更新されたバージョン
 
 # グローバル変数
 SHOESTRING_DIR=""
@@ -82,6 +82,7 @@ check_apt_locks() {
         "/var/cache/apt/archives/lock"
         "/var/cache/apt/pkgcache.bin"
         "/var/cache/apt/srcpkgcache.bin"
+        "/var/lib/dpkg/lock-frontend"
     )
     for lock in "${lock_files[@]}"; do
         if [ -f "$lock" ]; then
@@ -90,6 +91,8 @@ check_apt_locks() {
             print_success "ロックファイル $lock を削除しました！"
         fi
     done
+    # dpkg の修復
+    sudo dpkg --configure -a >> "$SHOESTRING_DIR/setup.log" 2>&1 || print_warning "dpkg の修復に失敗しましたが、続行します。"
 }
 
 # ディレクトリ権限の修正
@@ -156,8 +159,17 @@ install_dependencies() {
     retry_command "sudo apt-get update"
     # python3.12-distutils を python3-distutils に変更
     retry_command "sudo apt-get install -y python3.12 python3.12-venv python3.12-dev python3-distutils python3-pip build-essential libssl-dev"
+    # /etc/alternatives の権限を確認・修正
+    print_info "Checking /etc/alternatives permissions..."
+    sudo chown root:root /etc/alternatives
+    sudo chmod 755 /etc/alternatives
+    # python3 リンクの破損をチェック
+    if update-alternatives --display python3 2>/dev/null | grep -q "broken"; then
+      print_warning "python3 link group is broken. Resetting..."
+      sudo update-alternatives --remove-all python3
+    fi
     # python3 コマンドを python3.12 にリンク
-    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 2
+    retry_command "sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 2"
   else
     # macOS/CentOS の場合は従来方式
     if [ "$os_name" = "macos" ]; then
@@ -712,7 +724,7 @@ EOF
     if ! $SKIP_CONFIRM; then
         confirm_and_edit_ini "$overrides_file"
     fi
-    print_info "overrides.ini を生成: $overrides_file"
+    print_info "overrides.ini を生成しました。"
     
     print_info "Shoestring のセットアップを実行するよ"
     log "python3 -m shoestring setup --ca-key-path \"$ca_key_path\" --config \"$config_file\" --overrides \"$overrides_file\" --directory \"$shoestring_subdir\" --package $network_type" "DEBUG"
@@ -738,7 +750,7 @@ show_post_migration_guide() {
     print_info "大事なファイル："
     if [ "$NODE_KEY_FOUND" = true ]; then
         echo "  - ノード秘密鍵: $SHOESTRING_DIR/shoestring/node.key.pem"
-        echo "  - Bootstrap の node.key.pem を移行したよ！証明書がそのまま使えるからスッキリ！"
+        echo "  - Bootstrap の node.key.pem を移行したよ！証明書がそのまま使えるのでスッキリ！"
     else
         echo "  - CA秘密鍵: $SHOESTRING_DIR/shoestring/ca.key.pem"
     fi
@@ -754,7 +766,7 @@ show_post_migration_guide() {
     if [ "$NODE_KEY_FOUND" = true ]; then
         print_warning "node.key.pem と config-harvesting.properties は安全な場所にバックアップして保管してね！"
     else
-        print_warning "ca.key.pem と config-harvesting.properties は安全な場所にバックアップして保管してね！"
+        print_warning "ca.key.pem と config-harvesting.properties は安全な場所にバックアップしてください！"
     fi
     print_info "ノードの状態を確認するには:"
     echo "  1. コンテナ確認: docker ps"
@@ -763,7 +775,7 @@ show_post_migration_guide() {
     print_info "ノードタイプを変更したい場合: nano $SHOESTRING_DIR/shoestring/shoestring.ini で [node] の features や lightApi を編集"
     print_info "ログの詳細を確認: tail -f $SHOESTRING_DIR/setup.log"
     print_info "データコピーエラー: cat $SHOESTRING_DIR/data_copy.log"
-    print_info "import-bootstrap が失敗した場合、yq を使った方法を試してね: https://github.com/mikunNEM/bootstrap-to-shoestring"
+    print_info "import-bootstrap が失敗した場合、yq を使った方法を試してください: https://github.com/mikunNEM/bootstrap-to-shoestring"
     print_info "困ったらサポート: https://x.com/mikunNEM"
 }
 
@@ -776,7 +788,7 @@ main() {
     install_dependencies
     collect_user_info
     if ! check_node_key; then
-        print_info "node.key.pemが見つからなかったけど、ca.key.pemを生成して進むよ！"
+        print_info "node.key.pemが見つかりませんでした。ca.key.pemを生成して進みます！"
     fi
     ADDRESSES_YML="$BOOTSTRAP_DIR/addresses.yml"
     SHOESTRING_RESOURCES="$SHOESTRING_DIR/shoestring"
