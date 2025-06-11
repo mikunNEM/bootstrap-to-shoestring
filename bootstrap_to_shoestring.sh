@@ -771,8 +771,8 @@ main() {
     
     # 基本的な環境チェック（symbol-bootstrap を除く）
     print_info "基本環境をチェックするよ"
-    check_command "python3" || error_exit "python3 が見つからないよ。インストール: sudo apt install python3"
-    check_python_version
+    #check_command "python3" || error_exit "python3 が見つからないよ。インストール: sudo apt install python3"
+    #check_python_version
     
     install_dependencies
     collect_user_info
