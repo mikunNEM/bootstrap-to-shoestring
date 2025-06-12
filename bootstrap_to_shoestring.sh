@@ -159,11 +159,18 @@ install_dependencies() {
         # apt_pkg の動作確認
         if ! python3 -c "import apt_pkg" 2>/dev/null; then
             print_warning "apt_pkg モジュールが見つかりません。再度インストールを試みます...";
+            # 追加: モジュールの場所を確認
+            find / -name apt_pkg.cpython-*.so -2>>"$LOG_FILE" || print_warning "apt_pkg モジュールが見つかりません: find / -name apt_pkg.cpython-*.so";
             retry_command "sudo apt-get install --reinstall -y python3-apt" || error_exit "apt_pkg モジュールのインストールに失敗しました。システム Python の状態を確認してください: /usr/bin/python3 -c \"import apt_pkg\"";
+            # 再確認
+            if ! python3 -c "import apt_pkg" 2>/dev/null; then
+                error_exit "apt_pkg モジュールの再インストールにも失敗しました。手動で確認してください: sudo apt-get install python3-apt && python3 -c 'import apt_pkg'";
+            fi;
         fi;
+        print_info "apt_pkg モジュール確認OK";
         retry_command "sudo apt-get update";
         print_info "deadsnakes/ppa リポジトリを追加...";
-        retry_command "sudo add-apt-repository --yes ppa:deadsnakes/ppa";
+        retry_command "sudo add-apt-repository --yes ppa:deadsnakes/ppa" || error_exit "deadsnakes/ppa の追加に失敗しました。手動で追加してください: sudo add-apt-repository ppa:deadsnakes/ppa";
         retry_command "sudo apt-get update";
         retry_command "sudo apt-get install -y python3.12 python3.12-venv python3.12-dev python3-distutils python3-pip build-essential libssl-dev" || {
             print_warning "python3-distutils のインストールに失敗しましたが、setuptools で代替します.";
