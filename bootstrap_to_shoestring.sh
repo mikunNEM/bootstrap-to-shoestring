@@ -150,8 +150,8 @@ install_dependencies() {
         check_apt_locks
         # python3-apt の動作確認と再インストール
         if ! python3 -c "import apt_pkg" 2>/dev/null; then
-            print_warning "apt_pkg モジュールが見つかりません。再インストールします..."
-            retry_command "sudo apt-get install --reinstall python3-apt"
+            print_warning "apt_pkg モジュールが見つかりません。Python 3.12 用にインストールします..."
+            retry_command "sudo apt-get install --reinstall python3.12-apt"
         fi
         retry_command "sudo apt-get update"
         retry_command "sudo apt-get install -y software-properties-common"
@@ -646,46 +646,46 @@ setup_shoestring() {
         local temp_key_file=$(mktemp)
         echo "$private_key" > "$temp_key_file"
         log "プライベートキー（最初の12文字）: ${private_key:0:12}..." "DEBUG"
-        python3 -m shoestring pemtool --input "$temp_key_file" --output "$ca_key_path" >> "$SHOESTRING_DIR/pemtool.log" 2>&1 || error_exit "ca.key.pem の生成に失敗したよ。ログを確認してね: cat $SHOESTRING_DIR/pemtool.log"
-        rm -f "$temp_key_file"
-        print_info "ca.key.pem を生成: $ca_key_path"
-        log "python3 -m shoestring import-bootstrap --config \"$config_file\" --bootstrap \"$BOOTSTRAP_DIR\"" "DEBUG"
-        python3 -m shoestring import-bootstrap --config "$config_file" --bootstrap "$BOOTSTRAP_DIR" > "$SHOESTRING_DIR/import_bootstrap.log" 2>&1 || error_exit "import-bootstrap に失敗。ログを確認してね: cat $SHOESTRING_DIR/import_bootstrap.log"
-    fi
-    local src_harvesting="$BOOTSTRAP_DIR/nodes/node/server-config/resources/config-harvesting.properties"
-    local dest_harvesting="$shoestring_subdir/config-harvesting.properties"
-    if [ -f "$src_harvesting" ]; then
-        cp "$src_harvesting" "$dest_harvesting" || error_exit "Failed to copy config-harvesting.properties"
-        print_info "config-harvesting.properties をコピーしました: $dest_harvesting"
-    else
-        error_exit "config-harvesting.properties が見つからないよ: $src_harvesting"
-    fi
-    local absolute_harvesting=$(realpath "$dest_harvesting")
-    local absolute_node_key
-    if [ "$NODE_KEY_FOUND" = true ]; then
-        absolute_node_key=$(realpath "$dest_node_key")
-    else
-        absolute_node_key=$(realpath "$ca_key_path")
-    fi
-    print_info "shoestring.ini の [imports] を更新するよ"
-    local absolute_harvesting_escaped=$(printf '%s' "$absolute_harvesting" | sed 's/[\/&]/\\&/g')
-    local absolute_node_key_escaped=$(printf '%s' "$absolute_node_key" | sed 's/[\/&]/\\&/g')
-    sed -i "/^\[imports\]/,/^\[.*\]/ s|^harvesting\s*=.*|harvesting = $absolute_harvesting_escaped|" "$config_file"
-    sed -i "/^\[imports\]/,/^\[.*\]/ s|^nodeKey\s*=.*|nodeKey = $absolute_node_key_escaped|" "$config_file"
-    grep -A 5 '^\[imports\]' "$config_file" > "$SHOESTRING_DIR/imports_snippet.log" 2>&1
-    log "[imports] 更新後: $(cat "$SHOESTRING_DIR/imports_snippet.log" | sed 's/["'\'']/\\/g')" "DEBUG"
-    validate_ini "$config_file"
-    if ! $SKIP_CONFIRM; then
-        confirm_and_edit_ini "$config_file"
-    fi
-    print_info "shoestring.ini を生成: $config_file"
-    local overrides_file="$shoestring_subdir/overrides.ini"
-    print_info "overrides.ini を生成するよ"
-    if [ -f "$overrides_file" ]; then
-        mv "$overrides_file" "$overrides_file.bak-$(date +%Y%m%d_%H%M%S)"
-        print_info "既存の overrides.ini をバックアップ: $overrides_file.bak-$(date +%Y%m%d_%H%M%S)"
-    fi
-cat > "$overrides_file" << EOF
+            python3 -m shoestring pemtool --input "$temp_key_file" --output "$ca_key_path" >> "$SHOESTRING_DIR/pemtool.log" 2>&1 || error_exit "ca.key.pem の生成に失敗したよ。ログを確認してね: cat $SHOESTRING_DIR/pemtool.log"
+            rm -f "$temp_key_file"
+            print_info "ca.key.pem を生成: $ca_key_path"
+            log "python3 -m shoestring import-bootstrap --config \"$config_file\" --bootstrap \"$BOOTSTRAP_DIR\"" "DEBUG"
+            python3 -m shoestring import-bootstrap --config "$config_file" --bootstrap "$BOOTSTRAP_DIR" > "$SHOESTRING_DIR/import_bootstrap.log" 2>&1 || error_exit "import-bootstrap に失敗。ログを確認してね: cat $SHOESTRING_DIR/import_bootstrap.log"
+        fi
+        local src_harvesting="$BOOTSTRAP_DIR/nodes/node/server-config/resources/config-harvesting.properties"
+        local dest_harvesting="$shoestring_subdir/config-harvesting.properties"
+        if [ -f "$src_harvesting" ]; then
+            cp "$src_harvesting" "$dest_harvesting" || error_exit "Failed to copy config-harvesting.properties"
+            print_info "config-harvesting.properties をコピーしました: $dest_harvesting"
+        else
+            error_exit "config-harvesting.properties が見つからないよ: $src_harvesting"
+        fi
+        local absolute_harvesting=$(realpath "$dest_harvesting")
+        local absolute_node_key
+        if [ "$NODE_KEY_FOUND" = true ]; then
+            absolute_node_key=$(realpath "$dest_node_key")
+        else
+            absolute_node_key=$(realpath "$ca_key_path")
+        fi
+        print_info "shoestring.ini の [imports] を更新するよ"
+        local absolute_harvesting_escaped=$(printf '%s' "$absolute_harvesting" | sed 's/[\/&]/\\&/g')
+        local absolute_node_key_escaped=$(printf '%s' "$absolute_node_key" | sed 's/[\/&]/\\&/g')
+        sed -i "/^\[imports\]/,/^\[.*\]/ s|^harvesting\s*=.*|harvesting = $absolute_harvesting_escaped|" "$config_file"
+        sed -i "/^\[imports\]/,/^\[.*\]/ s|^nodeKey\s*=.*|nodeKey = $absolute_node_key_escaped|" "$config_file"
+        grep -A 5 '^\[imports\]' "$config_file" > "$SHOESTRING_DIR/imports_snippet.log" 2>&1
+        log "[imports] 更新後: $(cat "$SHOESTRING_DIR/imports_snippet.log" | sed 's/["'\'']/\\/g')" "DEBUG"
+        validate_ini "$config_file"
+        if ! $SKIP_CONFIRM; then
+            confirm_and_edit_ini "$config_file"
+        fi
+        print_info "shoestring.ini を生成: $config_file"
+        local overrides_file="$shoestring_subdir/overrides.ini"
+        print_info "overrides.ini を生成するよ"
+        if [ -f "$overrides_file" ]; then
+            mv "$overrides_file" "$overrides_file.bak-$(date +%Y%m%d_%H%M%S)"
+            print_info "既存の overrides.ini をバックアップ: $overrides_file.bak-$(date +%Y%m%d_%H%M%S)"
+        fi
+    cat > "$overrides_file" << EOF
 [user.account]
 enableDelegatedHarvestersAutoDetection = true
 
@@ -700,24 +700,24 @@ minFeeMultiplier =100
 host = $host_name
 friendlyName = $friendly_name
 EOF
-    log "overrides.ini 内容: $(cat "$overrides_file" | sed 's/["'\'']/\\/g')" "DEBUG"
-    validate_ini "$overrides_file"
-    if ! $SKIP_CONFIRM; then
-        confirm_and_edit_ini "$overrides_file"
-    fi
-    print_info "overrides.ini を生成しました"
-    print_info "Shoestring のセットアップを実行するよ"
-    log "python3 -m shoestring setup --ca-key-path \"$ca_key_path\" --config \"$config_file\" --overrides \"$overrides_file\" --directory \"$shoestring_subdir\" --package $network_type" "DEBUG"
-    python3 -m shoestring setup --ca-key-path "$ca_key_path" --config "$config_file" --overrides "$overrides_file" --directory "$shoestring_subdir" --package "$network_type" > "$SHOESTRING_DIR/setup_shoestring.log" 2>&1 || error_exit "Shoestring ノードのセットアップに失敗。ログを確認してね: cat $SHOESTRING_DIR/setup_shoestring.log"
-    copy_data
-    print_info "Shoestring ノードを起動するよ"
-    cd "$shoestring_subdir" || error_exit "ディレクトリ移動に失敗したよ: $shoestring_subdir"
-    print_info "Docker の古いリソースをクリアするよ(ネットワーク競合を回避)"
-    docker system prune -a --volumes --force >> "$SHOESTRING_DIR/docker_cleanup.log" 2>&1
-    docker-compose up -d > "$SHOESTRING_DIR/docker_compose.log" 2>&1 || error_exit "Shoestring ノードの起動に失敗。ログを確認してね: cat $SHOESTRING_DIR/docker_compose.log"
-    print_info "Shoestring ノードを起動したよ！"
-    deactivate
-}
+        log "overrides.ini 内容: $(cat "$overrides_file" | sed 's/["'\'']/\\/g')" "DEBUG"
+        validate_ini "$overrides_file"
+        if ! $SKIP_CONFIRM; then
+            confirm_and_edit_ini "$overrides_file"
+        fi
+        print_info "overrides.ini を生成しました"
+        print_info "Shoestring のセットアップを実行するよ"
+        log "python3 -m shoestring setup --ca-key-path \"$ca_key_path\" --config \"$config_file\" --overrides \"$overrides_file\" --directory \"$shoestring_subdir\" --package $network_type" "DEBUG"
+        python3 -m shoestring setup --ca-key-path "$ca_key_path" --config "$config_file" --overrides "$overrides_file" --directory "$shoestring_subdir" --package "$network_type" > "$SHOESTRING_DIR/setup_shoestring.log" 2>&1 || error_exit "Shoestring ノードのセットアップに失敗。ログを確認してね: cat $SHOESTRING_DIR/setup_shoestring.log"
+        copy_data
+        print_info "Shoestring ノードを起動するよ"
+        cd "$shoestring_subdir" || error_exit "ディレクトリ移動に失敗したよ: $shoestring_subdir"
+        print_info "Docker の古いリソースをクリアするよ(ネットワーク競合を回避)"
+        docker system prune -a --volumes --force >> "$SHOESTRING_DIR/docker_cleanup.log" 2>&1
+        docker-compose up -d > "$SHOESTRING_DIR/docker_compose.log" 2>&1 || error_exit "Shoestring ノードの起動に失敗。ログを確認してね: cat $SHOESTRING_DIR/docker_compose.log"
+        print_info "Shoestring ノードを起動したよ！"
+        deactivate
+    }
 
 # 移行後のガイド
 show_post_migration_guide() {
