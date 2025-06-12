@@ -142,7 +142,7 @@ install_dependencies() {
 # OS 判定
     local os_name="unknown"
     if [ -f /etc/os-release ]; then
-        os_name=$(grep -E '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
+        os_name=$(grep -E '^ID=' /etc/os-release | cut -d= -f2 | xargs)
     elif [ "$(uname -s)" = "Darwin" ]; then
         os_name="macos"
     fi
@@ -150,9 +150,18 @@ install_dependencies() {
 
     # Ubuntu/Debian 環境
     if [[ $os_name == "ubuntu" || $os_name == "debian" ]]; then
-        print_info "APT チェックとアップデート..."
+        print_info "APT キャッシュとロックを修復..."
         check_apt_locks
         retry_command "sudo apt-get update"
+        retry_command "sudo apt-get install -f -y" || error_exit "壊れたパッケージの修復に失敗しました。手動で実行してください: sudo apt-get install -f"
+        retry_command "sudo dpkg --configure -a" || echo "Warning: dpkg configuration failed, continuing..."
+
+        # サードパーティリポジトリ（deadsnakes/ppa）を無効化
+        if [ -f /etc/apt/sources.list.d/deadsnakes-ubuntu-ppa.list ]; then
+            print_warning "Deadsnakes PPA を無効化して依存の混乱を防ぎます..."
+            sudo mv /etc/apt/sources.list.d/deadsnakes-ubuntu-ppa.list /etc/apt/sources.list.d/deadsnakes-ubuntu-ppa.list.bak
+            retry_command "sudo apt-get update"
+        fi
 
         # Python 3.10 をインストール
         print_info "Python 3.10 をチェック＆インストール..."
@@ -160,11 +169,13 @@ install_dependencies() {
             print_warning "Python 3.10 が見つかりません。インストールします..."
             retry_command "sudo apt-get install -y python3.10 python3.10-venv python3.10-distutils" || error_exit "Python 3.10 のインストールに失敗しました。手動でインストールしてください: sudo apt-get install python3.10 python3.10-venv"
         fi
+        # 既存の python3.10 を正しいバージョンに
+        retry_command "sudo apt-get install --reinstall -y python3.10 python3.10-venv python3.10-distutils" || error_exit "Python 3.10 の再インストールに失敗しました。"
         print_info "Python 3.10: $(/usr/bin/python3.10 --version)"
 
-        # 開発ツールと必須パッケージをインストール
+        # 開発ツールと依存パッケージをインストール
         print_info "開発ツールと必須パッケージをインストール..."
-        retry_command "sudo apt-get install -y build-essential python3.10-dev libssl-dev python3-apt libapt-pkg-dev software-properties-common python3-pip python3-venv" || error_exit "必須パッケージのインストールに失敗しました。手動でインストールしてください: sudo apt-get install -y build-essential python3.10-dev libssl-dev python3-apt software-properties-common python3-pip python3-venv"
+        retry_command "sudo apt-get install -y build-essential python3.10-dev libssl-dev python3-apt libapt-pkg-dev software-properties-common python3-pip python3-venv" || error_exit "必須パッケージのインストールに失敗しました。手動で確認してください: sudo apt-get install -y build-essential python3.10-dev libssl-dev python3-apt software-properties-common python3-pip python3-venv"
 
         # apt_pkg の動作確認
         if ! /usr/bin/python3.10 -c "import apt_pkg" 2>/dev/null; then
