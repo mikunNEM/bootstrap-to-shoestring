@@ -222,14 +222,9 @@ install_dependencies() {
     print_info "Node.js: $(node -v)"
 
     # Docker Compose
-    if ! command -v docker compose >/dev/null 2>&1; then
-        print_warning "Docker Compose が無いのでインストール"
-        case $os_name in
-            ubuntu|debian) retry_command "sudo apt-get install -y docker-compose-plugin" ;;
-            centos)        retry_command "yum install -y docker-compose" ;;
-            macos)         retry_command "brew install docker-compose" ;;
-            *)             error_exit "Docker Compose を手動でインストールしてください。" ;;
-        esac
+    if ! command -v docker-compose >/dev/null 2>&1; then
+        print_warning "Docker Compose が見つからないよ。インストールするね！"
+        retry_command "sudo apt-get install -y docker-compose-plugin" || error_exit "Docker Compose のインストールに失敗しました。手動でインストールしてください: sudo apt-get install docker-compose-plugin"
     fi
     print_info "Docker Compose: $(docker compose version)"
 
