@@ -139,7 +139,7 @@ install_dependencies() {
     print_info "依存ツールをチェック＆インストールするよ"
     log "version $SCRIPT_VERSION" "INFO"
 
-    # OS 判定
+# OS 判定
     local os_name="unknown"
     if [ -f /etc/os-release ]; then
         os_name=$(grep -E '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
@@ -148,55 +148,42 @@ install_dependencies() {
     fi
     print_info "OS: $os_name"
 
-# Ubuntu/Debian 環境では Python3.12 を導入
+    # Ubuntu/Debian 環境
     if [[ $os_name == "ubuntu" || $os_name == "debian" ]]; then
-        print_info "APT チェックとアップデート...";
-        check_apt_locks;
-        retry_command "sudo apt-get update";
-        # python3-apt と software-properties-common を事前にインストール
-        print_info "python3-apt と software-properties-common をインストール...";
-        retry_command "sudo apt-get install -y python3-apt libapt-pkg-dev software-properties-common" || error_exit "python3-apt または software-properties-common のインストールに失敗しました。手動でインストールしてください: sudo apt-get install -y python3-apt software-properties-common";
+        print_info "APT チェックとアップデート..."
+        check_apt_locks
+        retry_command "sudo apt-get update"
+
+        # 必須パッケージをインストール
+        print_info "python3-apt, software-properties-common, python3-pip, python3-venv をインストール..."
+        retry_command "sudo apt-get install -y python3-apt libapt-pkg-dev software-properties-common python3-pip python3-venv" || error_exit "必須パッケージのインストールに失敗しました。手動でインストールしてください: sudo apt-get install -y python3-apt software-properties-common python3-pip python3-venv"
+
         # apt_pkg の動作確認
-        if ! python3 -c "import apt_pkg" 2>/dev/null; then
-            print_warning "apt_pkg モジュールが見つかりません。再度インストールを試みます...";
-            print_info "Python バージョン: $(/usr/bin/python3 --version)";
-            find /usr/lib -name apt_pkg.cpython-*.so 2>>"$LOG_FILE" || print_warning "apt_pkg モジュールが見つかりません: find /usr/lib -name apt_pkg.cpython-*.so";
-            retry_command "sudo apt-get install --reinstall -y python3-apt" || error_exit "apt_pkg モジュールのインストールに失敗しました。システム Python の状態を確認してください: /usr/bin/python3 -c \"import apt_pkg\"";
-            if ! python3 -c "import apt_pkg" 2>/dev/null; then
-                error_exit "apt_pkg モジュールの再インストールにも失敗しました。手動で確認してください: sudo apt-get install python3-apt && python3 -c 'import apt_pkg'";
-            fi;
-        fi;
-        print_info "apt_pkg モジュール確認OK";
-        retry_command "sudo apt-get update";
-        print_info "deadsnakes/ppa リポジトリを追加...";
-        retry_command "sudo add-apt-repository --yes ppa:deadsnakes/ppa" || error_exit "deadsnakes/ppa の追加に失敗しました。手動で追加してください: sudo add-apt-repository ppa:deadsnakes/ppa";
-        retry_command "sudo apt-get update";
-        # python3-distutils を除外（Python 3.12 では不要）
-        retry_command "sudo apt-get install -y python3.12 python3.12-venv python3.12-dev python3-pip build-essential libssl-dev" || {
-            print_warning "パッケージのインストールに失敗しましたが、setuptools で代替します.";
-            log "Package installation failed, will use setuptools in venv" "WARNING";
-        };
-        print_info "Checking /etc/alternatives permissions...";
-        sudo chown root:root /etc/alternatives;
-        sudo chmod 755 /etc/alternatives;
-        if update-alternatives --display python3 2>/dev/null | grep -q "broken"; then
-            print_warning "python3 link group is broken. Resetting...";
-            sudo update-alternatives --remove-all python3;
-        fi;
-        retry_command "sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 2";
-        if ! /usr/bin/python3.12 --version 2>/dev/null | grep -q "3.12"; then
-            print_warning "Python 3.12 が正しくインストールされていません。再度インストールを試みます...";
-            retry_command "sudo apt-get install --reinstall -y python3.12 python3.12-venv";
-        fi;
-        print_info "Python 3.12: $(/usr/bin/python3.12 --version)";
+        if ! /usr/bin/python3.10 -c "import apt_pkg" 2>/dev/null; then
+            print_warning "apt_pkg モジュールが見つかりません。再度インストールを試みます..."
+            print_info "Python バージョン: $(/usr/bin/python3.10 --version)"
+            find /usr/lib -name apt_pkg.cpython-*.so 2>>"$LOG_FILE" || print_warning "apt_pkg モジュールが見つかりません: find /usr/lib -name apt_pkg.cpython-*.so"
+            retry_command "sudo apt-get install --reinstall -y python3-apt" || error_exit "apt_pkg モジュールのインストールに失敗しました。手動で確認してください: sudo apt-get install python3-apt && /usr/bin/python3.10 -c 'import apt_pkg'"
+            if ! /usr/bin/python3.10 -c "import apt_pkg" 2>/dev/null; then
+                error_exit "apt_pkg モジュールの再インストールにも失敗しました。手動で確認してください: sudo apt-get install python3-apt && /usr/bin/python3.10 -c 'import apt_pkg'"
+            fi
+        fi
+        print_info "apt_pkg モジュール確認OK"
+
+        # command-not-found を一時無効化
+        if [ -f /usr/lib/cnf-update-db ]; then
+            print_info "command-not-found を一時無効化..."
+            sudo mv /usr/lib/cnf-update-db /usr/lib/cnf-update-db.bak
+        fi
+
+        # Python 3.10 の確認
+        if ! /usr/bin/python3.10 --version >/dev/null 2>&1; then
+            error_exit "Python 3.10 が見つかりません。インストールしてください: sudo apt-get install python3"
+        fi
+        print_info "Python 3.10: $(/usr/bin/python3.10 --version)"
     else
-        if [ "$os_name" = "macos" ]; then
-            retry_command "brew install python";
-        elif [ "$os_name" = "centos" ]; then
-            retry_command "sudo yum install -y python3 python3-venv python3-pip";
-        fi;
-    fi;
-    print_info "Python: $(python3 --version)";
+        error_exit "サポートされていないOS: $os_name。このスクリプトは Ubuntu/Debian のみ対応しています。"
+    fi
 
     # Node.js
     if ! command -v node >/dev/null 2>&1; then
@@ -270,60 +257,44 @@ install_dependencies() {
     print_info "OpenSSL: $openssl_version"
 
 # 仮想環境
-    local venv_dir="$SHOESTRING_DIR/shoestring-env";
-    print_info "仮想環境パス: $venv_dir";
-    fix_dir_permissions "$SHOESTRING_DIR";
+    local venv_dir="$SHOESTRING_DIR/shoestring-env"
+    print_info "仮想環境パス: $venv_dir"
+    fix_dir_permissions "$SHOESTRING_DIR"
     if [ -d "$venv_dir" ]; then
-        print_warning "既存の仮想環境が見つかりました: $venv_dir。削除して再作成します...";
-        rm -rf "$venv_dir";
-    fi;
+        print_warning "既存の仮想環境が見つかりました: $venv_dir。削除して再作成します..."
+        rm -rf "$venv_dir"
+    fi
     if [ ! -f "$venv_dir/bin/activate" ]; then
-        print_info "仮想環境を作成するよ...";
-        /usr/bin/python3.12 -m venv "$venv_dir" >> "$LOG_FILE" 2>&1 || {
-            print_warning "仮想環境の作成に失敗しました。pip なしで再試行します...";
-            /usr/bin/python3.12 -m venv --without-pip "$venv_dir" >> "$LOG_FILE" 2>&1 || error_exit "仮想環境の作成に失敗: $venv_dir。ログを確認してください: cat $LOG_FILE";
-            source "$venv_dir/bin/activate";
-            curl https://bootstrap.pypa.io/get-pip.py -o "$SHOESTRING_DIR/get-pip.py" >> "$LOG_FILE" 2>&1;
-            /usr/bin/python3.12 "$SHOESTRING_DIR/get-pip.py" >> "$LOG_FILE" 2>&1 || error_exit "pip のインストールに失敗しました。ログを確認してください: cat $LOG_FILE";
-            rm -f "$SHOESTRING_DIR/get-pip.py";
-        };
-        source "$venv_dir/bin/activate";
-        local pip_version=$(python3 -m pip --version 2>>"$LOG_FILE");
-        print_info "pip バージョン: $pip_version";
-        # setuptools をインストール
-        retry_command "pip install setuptools" || error_exit "setuptools のインストールに失敗しました。手動でインストールしてください: pip install setuptools";
-        retry_command "pip install --upgrade pip";
-        print_info "symbol-shoestring をインストール中…";
-        set +e;
-        pip install symbol-shoestring==0.2.1 >>"$LOG_FILE" 2>&1;
-        if [ $? -ne 0 ]; then
-            print_warning "symbol-shoestring のビルドに失敗しました。Python 開発ヘッダをインストールします…";
-            check_apt_locks;
-            retry_command "sudo apt-get update";
-            retry_command "sudo apt-get install -y python3.12-dev build-essential libssl-dev";
-            print_info "再度 symbol-shoestring をインストール中…";
-            pip install symbol-shoestring==0.2.1 >>"$LOG_FILE" 2>&1;
-            if [ $? -ne 0 ]; then
-                error_exit "symbol-shoestring の再インストールにも失敗しました。ログを確認してください: cat $LOG_FILE";
-            fi;
-            print_success "symbol-shoestring のインストールに成功しました！";
-        else
-            print_success "symbol-shoestring のインストールに成功しました！";
-        fi;
-        pip install setuptools >>"$LOG_FILE" 2>&1 || print_warning "setuptools のインストールに失敗しましたが、続行します。";
-        set -e;
-        pip list > "$SHOESTRING_DIR/pip_list.log" 2>&1;
+        print_info "仮想環境を作成するよ..."
+        /usr/bin/python3.10 -m venv "$venv_dir" >> "$LOG_FILE" 2>&1 || error_exit "仮想環境の作成に失敗しました。ログを確認してください: cat $LOG_FILE"
+        source "$venv_dir/bin/activate"
+        local pip_version=$(python3 -m pip --version 2>>"$LOG_FILE")
+        print_info "pip バージョン: $pip_version"
+        # setuptools と pip をインストール
+        retry_command "pip install setuptools" || error_exit "setuptools のインストールに失敗しました。手動でインストールしてください: pip install setuptools"
+        retry_command "pip install --upgrade pip" || error_exit "pip のアップグレードに失敗しました。手動でインストールしてください: pip install --upgrade pip"
+        # symbol-shoestring をインストール
+        print_info "symbol-shoestring をインストール中…"
+        retry_command "pip install symbol-shoestring==0.2.1" || {
+            print_warning "symbol-shoestring のインストールに失敗しました。開発ヘッダをインストールして再試行..."
+            check_apt_locks
+            retry_command "sudo apt-get update"
+            retry_command "sudo apt-get install -y python3-dev build-essential libssl-dev"
+            retry_command "pip install symbol-shoestring==0.2.1" || error_exit "symbol-shoestring の再インストールにも失敗しました。ログを確認してください: cat $LOG_FILE"
+        }
+        print_success "symbol-shoestring のインストールに成功しました！"
+        pip list > "$SHOESTRING_DIR/pip_list.log" 2>&1
         if grep -q symbol-shoestring "$SHOESTRING_DIR/pip_list.log"; then
-            print_info "symbol-shoestring インストール済み: $(grep symbol-shoestring "$SHOESTRING_DIR/pip_list.log")";
-            local shoestring_version=$(pip show symbol-shoestring | grep Version | awk '{print $2}');
-            log "symbol-shoestring version: $shoestring_version" "INFO";
+            print_info "symbol-shoestring インストール済み: $(grep symbol-shoestring "$SHOESTRING_DIR/pip_list.log")"
+            local shoestring_version=$(pip show symbol-shoestring | grep Version | awk '{print $2}')
+            log "symbol-shoestring version: $shoestring_version" "INFO"
         else
-            log "pip list: $(cat "$SHOESTRING_DIR/pip_list.log")" "DEBUG";
-            error_exit "symbol-shoestring が未インストール。インストールコマンド: pip install symbol-shoestring";
-        fi;
-        deactivate;
-    fi;
-    print_info "仮想環境: $venv_dir";
+            log "pip list: $(cat "$SHOESTRING_DIR/pip_list.log")" "DEBUG"
+            error_exit "symbol-shoestring が未インストール。インストールコマンド: pip install symbol-shoestring"
+        fi
+        deactivate
+    fi
+    print_info "仮想環境: $venv_dir"
 }
 
 # ディレクトリ自動検出
