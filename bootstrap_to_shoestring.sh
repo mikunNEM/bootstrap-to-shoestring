@@ -142,7 +142,7 @@ install_dependencies() {
 # OS 判定
     local os_name="unknown"
     if [ -f /etc/os-release ]; then
-        os_name=$(grep -E '^ID=' /etc/os-release | cut -d= -f2 | xargs)
+        os_name=$(grep -E '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
     elif [ "$(uname -s)" = "Darwin" ]; then
         os_name="macos"
     fi
@@ -152,16 +152,28 @@ install_dependencies() {
     if [[ $os_name == "ubuntu" || $os_name == "debian" ]]; then
         print_info "APT キャッシュとロックを修復..."
         check_apt_locks
+        sudo apt-get clean
+        sudo rm -rf /var/lib/apt/lists/* 2>>"$LOG_FILE"
         retry_command "sudo apt-get update"
         retry_command "sudo apt-get install -f -y" || error_exit "壊れたパッケージの修復に失敗しました。手動で実行してください: sudo apt-get install -f"
-        retry_command "sudo dpkg --configure -a" || echo "Warning: dpkg configuration failed, continuing..."
+        retry_command "sudo dpkg --configure -a" || print_warning "dpkg の修復に失敗しましたが、続行します。"
+        retry_command "sudo apt-get autoremove -y"
+        retry_command "sudo apt-get autoclean"
 
-        # サードパーティリポジトリ（deadsnakes/ppa）を無効化
-        if [ -f /etc/apt/sources.list.d/deadsnakes-ubuntu-ppa.list ]; then
-            print_warning "Deadsnakes PPA を無効化して依存の混乱を防ぎます..."
-            sudo mv /etc/apt/sources.list.d/deadsnakes-ubuntu-ppa.list /etc/apt/sources.list.d/deadsnakes-ubuntu-ppa.list.bak
+        # サードパーティリポジトリ（focal や deadsnakes）を無効化
+        print_info "サードパーティリポジトリをチェック..."
+        if ls /etc/apt/sources.list.d/*.list 2>/dev/null | grep -q "focal\|deadsnakes"; then
+            print_warning "focal または deadsnakes リポジトリを無効化します..."
+            sudo find /etc/apt/sources.list.d/ -type f -name "*.list" -exec grep -l "focal\|deadsnakes" {} \; | while read -r file; do
+                sudo mv "$file" "${file}.bak"
+                print_info "無効化: $file"
+            done
             retry_command "sudo apt-get update"
         fi
+
+        # パッケージの固定を解除
+        print_info "パッケージの固定を解除..."
+        sudo apt-mark unhold python3.10 python3.10-dev libpython3.10 libpython3.10-dev 2>>"$LOG_FILE"
 
         # Python 3.10 をインストール
         print_info "Python 3.10 をチェック＆インストール..."
@@ -171,9 +183,8 @@ install_dependencies() {
         fi
         # 既存の python3.10 を正しいバージョンに
         retry_command "sudo apt-get install --reinstall -y python3.10 python3.10-venv python3.10-distutils" || error_exit "Python 3.10 の再インストールに失敗しました。"
-        print_info "Python 3.10: $(/usr/bin/python3.10 --version)"
 
-        # 開発ツールと依存パッケージをインストール
+        # 開発ツールと依存パackageをインストール
         print_info "開発ツールと必須パッケージをインストール..."
         retry_command "sudo apt-get install -y build-essential python3.10-dev libssl-dev python3-apt libapt-pkg-dev software-properties-common python3-pip python3-venv" || error_exit "必須パッケージのインストールに失敗しました。手動で確認してください: sudo apt-get install -y build-essential python3.10-dev libssl-dev python3-apt software-properties-common python3-pip python3-venv"
 
@@ -290,7 +301,7 @@ install_dependencies() {
         print_info "symbol-shoestring をインストール中…"
         retry_command "pip install symbol-shoestring==0.2.1" || error_exit "symbol-shoestring のインストールに失敗しました。ログを確認してください: cat $LOG_FILE"
         print_success "symbol-shoestring のインストールに成功しました！"
-        pip list > "$SHOESTRING_DIR/pip_list.log" 2>&1
+        pip list > "$SHOESTRING_DIR/pip_list.log"
         if grep -q symbol-shoestring "$SHOESTRING_DIR/pip_list.log"; then
             print_info "symbol-shoestring インストール済み: $(grep symbol-shoestring "$SHOESTRING_DIR/pip_list.log")"
             local shoestring_version=$(pip show symbol-shoestring | grep Version | awk '{print $2}')
