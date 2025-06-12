@@ -159,8 +159,9 @@ install_dependencies() {
         # apt_pkg の動作確認
         if ! python3 -c "import apt_pkg" 2>/dev/null; then
             print_warning "apt_pkg モジュールが見つかりません。再度インストールを試みます...";
-            # 追加: モジュールの場所を確認
-            find / -name apt_pkg.cpython-*.so -2>>"$LOG_FILE" || print_warning "apt_pkg モジュールが見つかりません: find / -name apt_pkg.cpython-*.so";
+            # デバッグ情報: Python バージョンとモジュールパス
+            print_info "Python バージョン: $(/usr/bin/python3 --version)";
+            find /usr/lib -name apt_pkg.cpython-*.so 2>>"$LOG_FILE" || print_warning "apt_pkg モジュールが見つかりません: find /usr/lib -name apt_pkg.cpython-*.so";
             retry_command "sudo apt-get install --reinstall -y python3-apt" || error_exit "apt_pkg モジュールのインストールに失敗しました。システム Python の状態を確認してください: /usr/bin/python3 -c \"import apt_pkg\"";
             # 再確認
             if ! python3 -c "import apt_pkg" 2>/dev/null; then
