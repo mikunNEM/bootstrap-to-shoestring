@@ -22,15 +22,14 @@
     
     `bootstrap_to_shoestring.sh` をダウンロード
     ```bash
-    curl -O https://raw.githubusercontent.com/mikunNEM/bootstrap-to-shoestring/main/bootstrap_to_shoestring.sh
+    wget https://raw.githubusercontent.com/mikunNEM/bootstrap-to-shoestring/main/bootstrap_to_shoestring.sh
     ```
     
     `utils.sh` をダウンロード
     ```bash
-    curl -O https://raw.githubusercontent.com/mikunNEM/bootstrap-to-shoestring/main/utils.sh
+    wget https://raw.githubusercontent.com/mikunNEM/bootstrap-to-shoestring/main/utils.sh
     ```
 
-    ※ `wget` を好む場合は `curl -O` の代わりに `wget` を使用しても構いません。
 
 ## 2. 実行権限の設定
 
