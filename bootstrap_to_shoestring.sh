@@ -225,6 +225,11 @@ install_dependencies() {
     if ! command -v docker-compose >/dev/null 2>&1; then
         print_warning "Docker Compose が見つからないよ。インストールするね！"
         retry_command "sudo apt-get install -y docker-compose-plugin" || error_exit "Docker Compose のインストールに失敗しました。手動でインストールしてください: sudo apt-get install docker-compose-plugin"
+        # docker-compose コマンドをリンク
+        if ! command -v docker-compose >/dev/null 2>&1; then
+            sudo ln -s /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose 2>>"$LOG_FILE" || error_exit "docker-compose リンクの作成に失敗しました"
+            sudo chmod +x /usr/local/bin/docker-compose 2>>"$LOG_FILE" || error_exit "docker-compose の権限設定に失敗しました"
+        fi
     fi
     print_info "Docker Compose: $(docker compose version)"
 
