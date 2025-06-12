@@ -154,8 +154,16 @@ install_dependencies() {
         check_apt_locks
         retry_command "sudo apt-get update"
 
-        # 必須パッケージをインストール
-        print_info "python3-apt, software-properties-common, python3-pip, python3-venv をインストール..."
+        # Python 3.10 をインストール
+        print_info "Python 3.10 をチェック＆インストール..."
+        if ! /usr/bin/python3.10 --version >/dev/null 2>&1; then
+            print_warning "Python 3.10 が見つかりません。インストールします..."
+            retry_command "sudo apt-get install -y python3.10 python3.10-venv python3.10-distutils" || error_exit "Python 3.10 のインストールに失敗しました。手動でインストールしてください: sudo apt-get install python3.10 python3.10-venv"
+        fi
+        print_info "Python 3.10: $(/usr/bin/python3.10 --version)"
+
+        # システム Python が 3.12 の場合、python3-apt を再インストール
+        print_info "python3-apt の互換性を確認..."
         retry_command "sudo apt-get install -y python3-apt libapt-pkg-dev software-properties-common python3-pip python3-venv" || error_exit "必須パッケージのインストールに失敗しました。手動でインストールしてください: sudo apt-get install -y python3-apt software-properties-common python3-pip python3-venv"
 
         # apt_pkg の動作確認
@@ -175,12 +183,6 @@ install_dependencies() {
             print_info "command-not-found を一時無効化..."
             sudo mv /usr/lib/cnf-update-db /usr/lib/cnf-update-db.bak
         fi
-
-        # Python 3.10 の確認
-        if ! /usr/bin/python3.10 --version >/dev/null 2>&1; then
-            error_exit "Python 3.10 が見つかりません。インストールしてください: sudo apt-get install python3"
-        fi
-        print_info "Python 3.10: $(/usr/bin/python3.10 --version)"
     else
         error_exit "サポートされていないOS: $os_name。このスクリプトは Ubuntu/Debian のみ対応しています。"
     fi
@@ -279,7 +281,7 @@ install_dependencies() {
             print_warning "symbol-shoestring のインストールに失敗しました。開発ヘッダをインストールして再試行..."
             check_apt_locks
             retry_command "sudo apt-get update"
-            retry_command "sudo apt-get install -y python3-dev build-essential libssl-dev"
+            retry_command "sudo apt-get install -y python3.10-dev build-essential libssl-dev"
             retry_command "pip install symbol-shoestring==0.2.1" || error_exit "symbol-shoestring の再インストールにも失敗しました。ログを確認してください: cat $LOG_FILE"
         }
         print_success "symbol-shoestring のインストールに成功しました！"
