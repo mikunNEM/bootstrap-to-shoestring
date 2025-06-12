@@ -438,7 +438,7 @@ confirm_and_edit_ini() {
     while true; do
         echo -e "${YELLOW}${file_name} の内容を確認してね:${NC}"
         cat "$ini_file"
-        if confirm "この設定で大丈夫？ 別のターミナルでINIファイルを編集したら、nを押すと更新が確認出来るよ"; then
+        if confirm "この設定で大丈夫？ 別のターミナルを開いて$SHOESTRING_DIR/shoestring/${file_name}を編集してね。nを押すと更新が確認出来るよ"; then
             break
         else
             echo -e "${YELLOW}別のターミナルで nano $ini_file を開いて編集して、保存（Ctrl+O, Enter, Ctrl+X）してね！${NC}"
