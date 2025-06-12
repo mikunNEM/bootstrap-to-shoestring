@@ -151,41 +151,41 @@ install_dependencies() {
     # Ubuntu/Debian 環境では Python3.12 を導入
     if [[ $os_name == "ubuntu" || $os_name == "debian" ]]; then
      print_info "APT チェックとアップデート..."
-     check_apt_locks
-     retry_command "sudo apt-get update"
-     # python3-apt と software-properties-common を事前にインストール
-     print_info "python3-apt と software-properties-common をインストール..."
-     retry_command "sudo apt-get install -y python3-apt libapt-pkg-dev software-properties-common" || {
-         error_exit "python3-apt または software-properties-common のインストールに失敗しました。手動でインストールしてください: sudo apt-get install -y python3-apt software-properties-common"
-     }
-     # apt_pkg の動作確認
-     if ! python3 -c "import apt_pkg" 2>/dev/null; then
-         print_warning "apt_pkg モジュールが見つかりません。再度インストールを試みます..."
-         retry_command "sudo apt-get install --reinstall -y python3-apt" || {
-             error_exit "apt_pkg モジュールのインストールに失敗しました。システム Python の状態を確認してください: /usr/bin/python3 -c 'import apt_pkg'"
-         }
-     }
-     retry_command "sudo apt-get update"
-     print_info "deadsnakes/ppa リポジトリを追加..."
-     retry_command "sudo add-apt-repository --yes ppa:deadsnakes/ppa"
-     retry_command "sudo apt-get update"
-     retry_command "sudo apt-get install -y python3.12 python3.12-venv python3.12-dev python3-distutils python3-pip build-essential libssl-dev" || {
-         print_warning "python3-distutils のインストールに失敗しましたが、setuptools で代替します。"
-         log "python3-distutils installation failed, will use setuptools in venv" "WARNING"
-     }
-     print_info "Checking /etc/alternatives permissions..."
-     sudo chown root:root /etc/alternatives
-     sudo chmod 755 /etc/alternatives
-     if update-alternatives --display python3 2>/dev/null | grep -q "broken"; then
-         print_warning "python3 link group is broken. Resetting..."
-         sudo update-alternatives --remove-all python3
-     fi
-     retry_command "sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 2"
-     if ! /usr/bin/python3.12 --version 2>/dev/null | grep -q "3.12"; then
-         print_warning "Python 3.12 が正しくインストールされていません。再度インストールを試みます..."
-         retry_command "sudo apt-get install --reinstall -y python3.12 python3.12-venv"
-     fi
-     print_info "Python 3.12: $(/usr/bin/python3.12 --version)"
+        check_apt_locks
+        retry_command "sudo apt-get update"
+        # python3-apt と software-properties-common を事前にインストール
+        print_info "python3-apt と software-properties-common をインストール..."
+        retry_command "sudo apt-get install -y python3-apt libapt-pkg-dev software-properties-common" || {
+            error_exit "python3-apt または software-properties-common のインストールに失敗しました。手動でインストールしてください: sudo apt-get install -y python3-apt software-properties-common"
+        }
+        # apt_pkg の動作確認
+        if ! python3 -c "import apt_pkg" 2>/dev/null; then
+            print_warning "apt_pkg モジュールが見つかりません。再度インストールを試みます..."
+            retry_command "sudo apt-get install --reinstall -y python3-apt" || {
+                error_exit "apt_pkg モジュールのインストールに失敗しました。システム Python の状態を確認してください: /usr/bin/python3 -c \"import apt_pkg\""
+            }
+        }
+        retry_command "sudo apt-get update"
+        print_info "deadsnakes/ppa リポジトリを追加..."
+        retry_command "sudo add-apt-repository --yes ppa:deadsnakes/ppa"
+        retry_command "sudo apt-get update"
+        retry_command "sudo apt-get install -y python3.12 python3.12-venv python3.12-dev python3-distutils python3-pip build-essential libssl-dev" || {
+            print_warning "python3-distutils のインストールに失敗しましたが、setuptools で代替します。"
+            log "python3-distutils installation failed, will use setuptools in venv" "WARNING"
+        }
+        print_info "Checking /etc/alternatives permissions..."
+        sudo chown root:root /etc/alternatives
+        sudo chmod 755 /etc/alternatives
+        if update-alternatives --display python3 2>/dev/null | grep -q "broken"; then
+            print_warning "python3 link group is broken. Resetting..."
+            sudo update-alternatives --remove-all python3
+        fi
+        retry_command "sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 2"
+        if ! /usr/bin/python3.12 --version 2>/dev/null | grep -q "3.12"; then
+            print_warning "Python 3.12 が正しくインストールされていません。再度インストールを試みます..."
+            retry_command "sudo apt-get install --reinstall -y python3.12 python3.12-venv"
+        fi
+        print_info "Python 3.12: $(/usr/bin/python3.12 --version)"
     else
         if [ "$os_name" = "macos" ]; then
             retry_command "brew install python"
