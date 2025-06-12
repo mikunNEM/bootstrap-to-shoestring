@@ -162,7 +162,7 @@ install_dependencies() {
         if ! python3 -c "import apt_pkg" 2>/dev/null; then
             print_warning "apt_pkg モジュールが見つかりません。再度インストールを試みます..."
             retry_command "sudo apt-get install --reinstall -y python3-apt" || {
-                error_exit "apt_pkg モジュールのインストールに失敗しました。システム Python の状態を確認してください:" #/usr/bin/python3 -c \"import apt_pkg\""
+                error_exit "apt_pkg モジュールのインストールに失敗しました。システム Python の状態を確認してください:" # /usr/bin/python3 -c \"import apt_pkg\""
             }
         }
         retry_command "sudo apt-get update"
