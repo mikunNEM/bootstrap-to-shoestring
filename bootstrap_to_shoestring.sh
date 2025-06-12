@@ -162,9 +162,9 @@ install_dependencies() {
         fi
         print_info "Python 3.10: $(/usr/bin/python3.10 --version)"
 
-        # システム Python が 3.12 の場合、python3-apt を再インストール
-        print_info "python3-apt の互換性を確認..."
-        retry_command "sudo apt-get install -y python3-apt libapt-pkg-dev software-properties-common python3-pip python3-venv" || error_exit "必須パッケージのインストールに失敗しました。手動でインストールしてください: sudo apt-get install -y python3-apt software-properties-common python3-pip python3-venv"
+        # 開発ツールと必須パッケージをインストール
+        print_info "開発ツールと必須パッケージをインストール..."
+        retry_command "sudo apt-get install -y build-essential python3.10-dev libssl-dev python3-apt libapt-pkg-dev software-properties-common python3-pip python3-venv" || error_exit "必須パッケージのインストールに失敗しました。手動でインストールしてください: sudo apt-get install -y build-essential python3.10-dev libssl-dev python3-apt software-properties-common python3-pip python3-venv"
 
         # apt_pkg の動作確認
         if ! /usr/bin/python3.10 -c "import apt_pkg" 2>/dev/null; then
@@ -277,13 +277,7 @@ install_dependencies() {
         retry_command "pip install --upgrade pip" || error_exit "pip のアップグレードに失敗しました。手動でインストールしてください: pip install --upgrade pip"
         # symbol-shoestring をインストール
         print_info "symbol-shoestring をインストール中…"
-        retry_command "pip install symbol-shoestring==0.2.1" || {
-            print_warning "symbol-shoestring のインストールに失敗しました。開発ヘッダをインストールして再試行..."
-            check_apt_locks
-            retry_command "sudo apt-get update"
-            retry_command "sudo apt-get install -y python3.10-dev build-essential libssl-dev"
-            retry_command "pip install symbol-shoestring==0.2.1" || error_exit "symbol-shoestring の再インストールにも失敗しました。ログを確認してください: cat $LOG_FILE"
-        }
+        retry_command "pip install symbol-shoestring==0.2.1" || error_exit "symbol-shoestring のインストールに失敗しました。ログを確認してください: cat $LOG_FILE"
         print_success "symbol-shoestring のインストールに成功しました！"
         pip list > "$SHOESTRING_DIR/pip_list.log" 2>&1
         if grep -q symbol-shoestring "$SHOESTRING_DIR/pip_list.log"; then
