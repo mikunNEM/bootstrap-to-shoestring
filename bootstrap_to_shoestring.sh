@@ -364,7 +364,8 @@ collect_user_info() {
         echo -e "${YELLOW}Bootstrap の target フォルダパスを入力してね:${NC}"
         echo -e "${YELLOW}デフォルト（Enterで選択）: $BOOTSTRAP_DIR_DEFAULT${NC}"
         read -r input
-        BOOTSTRAP_DIR="$(expand_tilde "${input:-$BOOTSTRAP_DIR_DEFAULT}")"
+        BOOTSTRAP_DIR="$(expand_tilde "${input:-$BOO
+TSTRAP_DIR_DEFAULT}")"
         echo -e "${YELLOW}バックアップの保存先フォルダを入力してね:${NC}"
         echo -e "${YELLOW}デフォルト（Enterで選択）: $BACKUP_DIR_DEFAULT${NC}"
         read -r input
@@ -407,10 +408,11 @@ create_backup() {
         "addresses.yml"
         "nodes/node/server-config/resources/config-harvesting.properties"
         "nodes/node/cert/node.key.pem"
+        "nodes/node/votingkeys"
     )
     mkdir -p "$BACKUP_DIR"
     for file in "${files[@]}"; do
-        if [ -f "$src_dir/$file" ]; then
+        if [ -f "$src_dir/$file" ] || [ -d "$src_dir/$file" ]; then
             cp -r "$src_dir/$file" "$BACKUP_DIR/" 2>/dev/null || true
             print_info "Backed up $file"
         else
@@ -616,6 +618,14 @@ setup_shoestring() {
     print_info "shoestring.ini を初期化するよ"
     log "python3 -m shoestring init \"$config_file\" --package $network_type" "DEBUG"
     python3 -m shoestring init "$config_file" --package "$network_type" > "$SHOESTRING_DIR/install_shoestring.log" 2>&1 || error_exit "shoestring.ini の初期化に失敗。手動で確認してね: python3 -m shoestring init $config_file"
+    # --- 新規追加: shoestring.ini の [node] を friendly_name で更新 ---
+    print_info "shoestring.ini の [node] を friendly_name で更新するよ"
+    local friendly_name_escaped=$(printf '%s' "$friendly_name" | sed 's/[.*]/\\&/g')
+    sed -i "/^\[node\]/,/^\[.*\]/ s|^caCommonName\s*=.*|caCommonName = CA $friendly_name_escaped|" "$config_file"
+    sed -i "/^\[node\]/,/^\[.*\]/ s|^nodeCommonName\s*=.*|nodeCommonName = $friendly_name_escaped|" "$config_file"
+    grep -A 10 '^\[node\]' "$config_file" > "$SHOESTRING_DIR/node_snippet.log" 2>&1
+    log "[node] 更新後: $(cat "$SHOESTRING_DIR/node_snippet.log" | sed 's/["'\'']/\\/g')" "DEBUG"
+    validate_ini "$config_file"
     local ca_key_path="$shoestring_subdir/ca.key.pem"
     check_node_key
     if [ "$NODE_KEY_FOUND" = true ]; then
@@ -661,15 +671,28 @@ setup_shoestring() {
         log "python3 -m shoestring import-bootstrap --config \"$config_file\" --bootstrap \"$BOOTSTRAP_DIR\"" "DEBUG"
         python3 -m shoestring import-bootstrap --config "$config_file" --bootstrap "$BOOTSTRAP_DIR" > "$SHOESTRING_DIR/import_bootstrap.log" 2>&1 || error_exit "import-bootstrap に失敗。ログを確認してね: cat $SHOESTRING_DIR/import_bootstrap.log"
     fi
+    # --- 修正: config-harvesting.properties と votingkeys をコピー ---
     local src_harvesting="$BOOTSTRAP_DIR/nodes/node/server-config/resources/config-harvesting.properties"
     local dest_harvesting="$shoestring_subdir/config-harvesting.properties"
+    local src_votingkeys="$BOOTSTRAP_DIR/nodes/node/votingkeys"
+    local dest_votingkeys="$shoestring_subdir/votingkeys"
     if [ -f "$src_harvesting" ]; then
-        cp "$src_harvesting" "$dest_harvesting" || error_exit "Failed to copy config-harvesting.properties"
+        cp "$src_harvesting" "$dest_harvesting" || error_exit "Failed to copy config-harvesting.properties: $src_harvesting"
+        fix_dir_permissions "$(dirname "$dest_harvesting")"
         print_info "config-harvesting.properties をコピーしました: $dest_harvesting"
     else
-        error_exit "config-harvesting.properties が見つからないよ: $src_harvesting"
+        print_warning "config-harvesting.properties が見つからないよ: $src_harvesting。コピーはスキップ。"
     fi
-    local absolute_harvesting=$(realpath "$dest_harvesting")
+    if [ -d "$src_votingkeys" ]; then
+        cp -r "$src_votingkeys" "$dest_votingkeys" || error_exit "Failed to copy votingkeys: $src_votingkeys"
+        fix_dir_permissions "$dest_votingkeys"
+        print_info "votingkeys ディレクトリをコピーしました: $dest_votingkeys"
+    else
+        print_warning "votingkeys ディレクトリが見つからないよ: $src_votingkeys。コピーはスキップ。"
+    fi
+    # --- 修正: shoestring.ini の [imports] を更新 ---
+    local absolute_harvesting="$dest_harvesting"
+    local absolute_votingkeys="$dest_votingkeys"
     local absolute_node_key
     if [ "$NODE_KEY_FOUND" = true ]; then
         absolute_node_key=$(realpath "$dest_node_key")
@@ -678,8 +701,10 @@ setup_shoestring() {
     fi
     print_info "shoestring.ini の [imports] を更新するよ"
     local absolute_harvesting_escaped=$(printf '%s' "$absolute_harvesting" | sed 's/[.*]/\\&/g')
+    local absolute_votingkeys_escaped=$(printf '%s' "$absolute_votingkeys" | sed 's/[.*]/\\&/g')
     local absolute_node_key_escaped=$(printf '%s' "$absolute_node_key" | sed 's/[.*]/\\&/g')
     sed -i "/^\[imports\]/,/^\[.*\]/ s|^harvesting\s*=.*|harvesting = $absolute_harvesting_escaped|" "$config_file"
+    sed -i "/^\[imports\]/,/^\[.*\]/ s|^voter\s*=.*|voter = $absolute_votingkeys_escaped|" "$config_file"
     sed -i "/^\[imports\]/,/^\[.*\]/ s|^nodeKey\s*=.*|nodeKey = $absolute_node_key_escaped|" "$config_file"
     grep -A 5 '^\[imports]' "$config_file" > "$SHOESTRING_DIR/imports_snippet.log" 2>&1
     log "[imports] 更新後: $(cat "$SHOESTRING_DIR/imports_snippet.log" | sed 's/["'\'']/\\/g')" "DEBUG"
@@ -741,6 +766,7 @@ show_post_migration_guide() {
         echo "  - CA秘密鍵: $SHOESTRING_DIR/shoestring/ca.key.pem"
     fi
     echo "  - ハーベスト設定: $SHOESTRING_DIR/shoestring/config-harvesting.properties"
+    echo "  - 投票鍵ディレクトリ: $SHOESTRING_DIR/shoestring/votingkeys"
     echo "  - バックアップ: $BACKUP_DIR"
     echo "  - ログ: $SHOESTRING_DIR/setup.log"
     echo "  - 設定: $SHOESTRING_DIR/shoestring/shoestring.ini"
@@ -750,15 +776,16 @@ show_post_migration_guide() {
     echo "  - データ: $SHOESTRING_DIR/shoestring/data"
     echo
     if [ "$NODE_KEY_FOUND" = true ]; then
-        print_warning "node.key.pem と config-harvesting.properties は安全な場所にバックアップして保管してね！"
+        print_warning "node.key.pem, config-harvesting.properties, votingkeys は安全な場所にバックアップして保管してね！"
     else
-        print_warning "ca.key.pem と config-harvesting.properties は安全な場所にバックアップして保管してね！"
+        print_warning "ca.key.pem, config-harvesting.properties, votingkeys は安全な場所にバックアップして保管してね！"
     fi
     print_info "ノードの状態を確認するには:"
     echo "  1. コンテナ確認: docker ps"
     echo "  2. ログを確認: cd \"$SHOESTRING_DIR/shoestring\" && docker-compose logs -f"
     echo "  3. REST API 確認: curl http://localhost:3000"
     print_info "ノードタイプを変更したい場合: nano $SHOESTRING_DIR/shoestring/shoestring.ini で [node] の features や lightApi を編集"
+    print_info "ノード名は friendlyName（$friendly_name）で自動設定されました: caCommonName=CA $friendly_name, nodeCommonName=$friendly_name"
     print_info "ログの詳細を確認: tail -f $SHOESTRING_DIR/setup.log"
     print_info "データコピーエラー: cat $SHOESTRING_DIR/data_copy.log"
     print_info "import-bootstrap が失敗した場合は、yq を使った方法を試してね: https://github.com/mikunNEM/bootstrap-to-shoestring"
