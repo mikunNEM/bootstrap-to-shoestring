@@ -54,6 +54,7 @@ NODE_KEY_FOUND=false
 LOG_FILE=""
 ADDRESSES_YML=""
 SHOESTRING_RESOURCES=""
+FRIENDLY_NAME="" # --- 新規追加: グローバル変数 ---
 
 # コマンドライン引数
 while [ $# -gt 0 ]; do
@@ -606,10 +607,11 @@ setup_shoestring() {
     local shoestring_subdir="$SHOESTRING_DIR/shoestring"
     mkdir -p "$shoestring_subdir" || error_exit "$shoestring_subdir の作成に失敗"
     fix_dir_permissions "$shoestring_subdir"
-    local network_type friendly_name
-    IFS=' ' read -r network_type friendly_name <<< "$(detect_network_and_roles)"
-    print_info "検出したネットワーク: $network_type、ノード名: $friendly_name"
-    log "Parsed - network_type: $network_type, friendly_name: $friendly_name" "DEBUG"
+    local network_type
+    # --- 修正: friendly_name をグローバル変数に設定 ---
+    IFS=' ' read -r network_type FRIENDLY_NAME <<< "$(detect_network_and_roles)"
+    print_info "検出したネットワーク: $network_type、ノード名: $FRIENDLY_NAME"
+    log "Parsed - network_type: $network_type, friendly_name: $FRIENDLY_NAME" "DEBUG"
     local host_name
     host_name=$(extract_host)
     print_info "検出したホスト: $host_name"
@@ -619,7 +621,7 @@ setup_shoestring() {
     python3 -m shoestring init "$config_file" --package "$network_type" > "$SHOESTRING_DIR/install_shoestring.log" 2>&1 || error_exit "shoestring.ini の初期化に失敗。手動で確認してね: python3 -m shoestring init $config_file"
     # --- 修正: shoestring.ini の [node] を friendly_name で更新 ---
     print_info "shoestring.ini の [node] を friendly_name で更新するよ"
-    local friendly_name_escaped=$(printf '%s' "$friendly_name" | sed 's/[.*]/\\&/g')
+    local friendly_name_escaped=$(printf '%s' "$FRIENDLY_NAME" | sed 's/[.*]/\\&/g')
     sed -i "/^\[node\]/,/^\[.*\]/ s|^caCommonName\s*=.*|caCommonName = CA $friendly_name_escaped|" "$config_file"
     sed -i "/^\[node\]/,/^\[.*\]/ s|^nodeCommonName\s*=.*|nodeCommonName = $friendly_name_escaped|" "$config_file"
     grep -A 10 '^\[node\]' "$config_file" > "$SHOESTRING_DIR/node_snippet.log" 2>&1
@@ -712,7 +714,7 @@ setup_shoestring() {
     sed -i "/^\[imports\]/,/^\[.*\]/ s|^nodeKey\s*=.*|nodeKey = $absolute_node_key_escaped|" "$config_file"
     grep -A 5 '^\[imports\]' "$config_file" > "$SHOESTRING_DIR/imports_snippet.log" 2>&1
     log "[imports] 更新後: $(cat "$SHOESTRING_DIR/imports_snippet.log" | sed 's/["'\'']/\\/g')" "DEBUG"
-    # --- 新規追加: harvester パスの検証 ---
+    # --- 修正: harvester パスの検証 ---
     if grep -q "^harvester\s*=\s*$absolute_harvester_escaped" "$config_file"; then
         print_info "harvester パスが正しく更新されました: $absolute_harvester"
     else
@@ -743,7 +745,7 @@ minFeeMultiplier =100
 
 [node.localnode]
 host = $host_name
-friendlyName = $friendly_name
+friendlyName = $FRIENDLY_NAME
 EOF
     log "overrides.ini content: $(cat "$overrides_file" | sed 's/["'']/\\\/g')" "DEBUG"
     validate_ini "$overrides_file"
@@ -796,7 +798,9 @@ show_post_migration_guide() {
     echo "  2. ログを確認: cd \"$SHOESTRING_DIR/shoestring\" && docker-compose logs -f"
     echo "  3. REST API 確認: curl http://localhost:3000"
     print_info "ノードタイプを変更したい場合: nano $SHOESTRING_DIR/shoestring/shoestring.ini で [node] の features や lightApi を編集"
-    print_info "ノード名は friendlyName（$friendly_name）で自動設定されました: caCommonName=CA $friendly_name, nodeCommonName=$friendly_name"
+    # --- 修正: friendly_name の安全な参照 ---
+    local display_name="${FRIENDLY_NAME}"
+    print_info "ノード名は friendlyName（$display_name）で自動設定されました: caCommonName=CA $display_name, nodeCommonName=$display_name"
     print_info "harvester は Shoestring 内のパスに設定されました: $SHOESTRING_DIR/shoestring/config-harvesting.properties"
     print_info "ログの詳細を確認: tail -f $SHOESTRING_DIR/setup.log"
     print_info "データコピーエラー: cat $SHOESTRING_DIR/data_copy.log"
