@@ -636,7 +636,6 @@ copy_data() {
     print_info "Bootstrap のノードを安全に停止するよ"
     log "現在の Docker コンテナ: $(docker ps -a)" "DEBUG"
     
-    # Bootstrap ノードの安全停止
     if [ -d "$BOOTSTRAP_COMPOSE_DIR" ]; then
         print_info "Bootstrap ノードを安全に停止するよ: $BOOTSTRAP_COMPOSE_DIR"
         cd "$BOOTSTRAP_COMPOSE_DIR" || error_exit "Bootstrap ディレクトリに移動できないよ: $BOOTSTRAP_COMPOSE_DIR"
@@ -646,7 +645,6 @@ copy_data() {
                 log "Bootstrap 停止エラー: $(tail -n 20 "$SHOESTRING_DIR/log/data_copy.log")" "ERROR"
                 error_exit "Bootstrap のノード停止に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
             }
-            # 停止確認
             local containers
             containers=$(docker-compose ps -q 2>>"$SHOESTRING_DIR/log/data_copy.log")
             if [ -n "$containers" ]; then
@@ -661,28 +659,21 @@ copy_data() {
         error_exit "Bootstrap ディレクトリが見つからないよ: $BOOTSTRAP_COMPOSE_DIR"
     fi
     
-    # データコピー前にバックアップ
-    print_info "データコピー前にバックアップを取るよ..."
-    local data_backup_dir="$BACKUP_DIR/data_backup_$(date +%Y%m%d_%H%M%S)"
-    mkdir -p "$data_backup_dir"
-    if [ -d "$src_db" ]; then
-        cp -r "$src_db" "$data_backup_dir/db" 2>>"$SHOESTRING_DIR/log/data_copy.log" || print_warning "データベースバックアップに失敗したけど、続行するよ: $src_db"
-        print_info "データベースをバックアップしたよ: $data_backup_dir/db"
-    fi
-    if [ -d "$src_data" ]; then
-        cp -r "$src_data" "$data_backup_dir/data" 2>>"$SHOESTRING_DIR/log/data_copy.log" || print_warning "チェーンデータバックアップに失敗したけど、続行するよ: $src_data"
-        print_info "チェーンデータをバックアップしたよ: $data_backup_dir/data"
-    fi
-    
     # データベースコピー
     if [ -d "$src_db" ]; then
+        # サイズ計算
+        local db_size_bytes=$(du -sb "$src_db" | awk '{print $1}')
+        local db_size_human=$(du -sh "$src_db" | awk '{print $1}')
+        print_info "データベース $db_size_human をコピーします"
+        log "データベースサイズ: $db_size_human ($db_size_bytes bytes)" "INFO"
+        
         mkdir -p "$dest_db" || error_exit "$dest_db の作成に失敗"
         fix_dir_permissions "$dest_db"
         if command -v pv >/dev/null 2>&1; then
             echo -e "${YELLOW}データベースコピー中... sudo のパスワードを入力してね:${NC}"
             print_info "データベース（db）をコピー中（進捗は画面に表示、詳細は: $SHOESTRING_DIR/log/data_copy.log）"
             sudo tar -C "$src_db" -cf - . 2>>"$SHOESTRING_DIR/log/data_copy.log" \
-              | pv \
+              | pv -s "$db_size_bytes" -pera \
               | sudo tar -C "$dest_db" -xf - 2>>"$SHOESTRING_DIR/log/data_copy.log" \
               || error_exit "データベースのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
             print_info "データベースコピー完了！"
@@ -698,13 +689,19 @@ copy_data() {
 
     # チェーンデータコピー
     if [ -d "$src_data" ]; then
+        # サイズ計算
+        local data_size_bytes=$(du -sb "$src_data" | awk '{print $1}')
+        local data_size_human=$(du -sh "$src_data" | awk '{print $1}')
+        print_info "チェーンデータ $data_size_human をコピーします"
+        log "チェーンデータサイズ: $data_size_human ($data_size_bytes bytes)" "INFO"
+        
         mkdir -p "$dest_data" || error_exit "$dest_data の作成に失敗"
         fix_dir_permissions "$dest_data"
         if command -v pv >/dev/null 2>&1; then
             echo -e "${YELLOW}チェーンデータコピー中... sudo のパスワードを入力してね:${NC}"
             print_info "チェーンデータをコピー中（進捗は画面に表示）…"
             sudo tar -C "$src_data" -cf - . 2>>"$SHOESTRING_DIR/log/data_copy.log" \
-              | pv \
+              | pv -s "$data_size_bytes" -pera \
               | sudo tar -C "$dest_data" -xf - 2>>"$SHOESTRING_DIR/log/data_copy.log" \
               || error_exit "チェーンデータのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
             print_info "チェーンデータコピー完了！"
