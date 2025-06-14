@@ -39,7 +39,7 @@ else
 fi
 
 # スクリプトバージョン
-SCRIPT_VERSION="2025-06-11-v26"
+SCRIPT_VERSION="2025-06-14-v30"
 
 # グローバル変数
 SHOESTRING_DIR=""
@@ -54,7 +54,7 @@ NODE_KEY_FOUND=false
 LOG_FILE=""
 ADDRESSES_YML=""
 SHOESTRING_RESOURCES=""
-FRIENDLY_NAME="" # --- 新規追加: グローバル変数 ---
+FRIENDLY_NAME=""
 
 # コマンドライン引数
 while [ $# -gt 0 ]; do
@@ -89,21 +89,33 @@ check_apt_locks() {
 # ディレクトリ権限の修正
 fix_dir_permissions() {
     local dir="$1"
-    print_info "Checking and fixing for $dir..."
+    print_info "Checking and fixing permissions for $dir..."
     if [ ! -d "$dir" ]; then
         mkdir -p "$dir" || error_exit "Failed to create directory $dir"
         print_success "Created directory $dir!"
     fi
     if ! touch "$dir/.write_test" 2>/dev/null; then
         print_warning "$dir に書き込み権限がないよ。修正するね！"
-        chmod u+rwx "$dir" || error_exit "Failed to change permissions of $dir"
-        chown "$(whoami):$(whoami)" "$dir" || error_exit "Failed to change owner of $dir"
+        sudo chmod u+rwx "$dir" || error_exit "Failed to change permissions of $dir"
+        sudo chown "$(whoami):$(whoami)" "$dir" || error_exit "Failed to change owner of $dir"
         if ! touch "$dir/.write_test" 2>/dev/null; then
-            error_exit "Failed to fix permissions for $dir. Check manually: chmod u+rwx $dir"
+            error_exit "Failed to fix permissions for $dir. Check manually: sudo chmod u+rwx $dir"
         fi
         print_success "Fixed permissions for $dir!"
     fi
     rm -f "$dir/.write_test"
+}
+
+# ディスク容量のチェック（仮想環境用）
+check_disk_space_for_venv() {
+    local dir="$1"
+    local required_space_mb=1000 # 1GB for virtual environment
+    local available_space_mb
+    available_space_mb=$(df -m "$dir" | tail -n 1 | awk '{print $4}')
+    if [ "$available_space_mb" -lt "$required_space_mb" ]; then
+        error_exit "ディスク容量が不足してるよ！$dir に ${required_space_mb}MB 必要だけど、${available_space_mb}MB しかない。スペースを空けて！"
+    fi
+    print_info "ディスク容量（仮想環境用）は十分だよ: ${available_space_mb}MB 利用可能"
 }
 
 # リトライコマンド（エラーメッセージを詳細に表示）
@@ -140,7 +152,7 @@ install_dependencies() {
     print_info "依存ツールをチェック＆インストールするよ"
     log "version $SCRIPT_VERSION" "INFO"
 
-# OS 判定
+    # OS 判定
     local os_name="unknown"
     if [ -f /etc/os-release ]; then
         os_name=$(grep -E '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
@@ -176,16 +188,22 @@ install_dependencies() {
         print_info "パッケージの固定を解除..."
         sudo apt-mark unhold python3.10 python3.10-dev libpython3.10 libpython3.10-dev 2>>"$LOG_FILE"
 
-        # Python 3.10 をインストール
-        print_info "Python 3.10 をチェック＆インストール..."
-        if ! /usr/bin/python3.10 --version >/dev/null 2>&1; then
-            print_warning "Python 3.10 が見つかりません。インストールします..."
+        # Python 3.10 の確認
+        print_info "Python 3.10 の存在を確認..."
+        if ! command -v /usr/bin/python3.10 >/dev/null 2>&1; then
+            print_warning "/usr/bin/python3.10 が見つかりません。インストールを試みます..."
             retry_command "sudo apt-get install -y python3.10 python3.10-venv python3.10-distutils" || error_exit "Python 3.10 のインストールに失敗しました。手動でインストールしてください: sudo apt-get install python3.10 python3.10-venv"
         fi
+        local python_version=$(/usr/bin/python3.10 --version 2>>"$LOG_FILE" || echo "unknown")
+        if [[ "$python_version" != Python\ 3.10* ]]; then
+            error_exit "Python 3.10 が正しくインストールされていません。バージョン: $python_version。手動で確認してください: /usr/bin/python3.10 --version"
+        fi
+        print_info "Python 3.10 確認OK: $python_version"
+
         # 既存の python3.10 を正しいバージョンに
         retry_command "sudo apt-get install --reinstall -y python3.10 python3.10-venv python3.10-distutils" || error_exit "Python 3.10 の再インストールに失敗しました。"
 
-        # 開発ツールと依存パackageをインストール
+        # 開発ツールと依存パッケージをインストール
         print_info "開発ツールと必須パッケージをインストール..."
         retry_command "sudo apt-get install -y build-essential python3.10-dev libssl-dev python3-apt libapt-pkg-dev software-properties-common python3-pip python3-venv" || error_exit "必須パッケージのインストールに失敗しました。手動で確認してください: sudo apt-get install -y build-essential python3.10-dev libssl-dev python3-apt software-properties-common python3-pip python3-venv"
 
@@ -281,38 +299,47 @@ install_dependencies() {
     local openssl_version=$(openssl version)
     print_info "OpenSSL: $openssl_version"
 
-# 仮想環境
+    # 仮想環境作成前のディスク容量チェック
+    check_disk_space_for_venv "$SHOESTRING_DIR"
+    log "SHOESTRING_DIR for virtual environment: $SHOESTRING_DIR" "DEBUG"
+
+    # 仮想環境
     local venv_dir="$SHOESTRING_DIR/shoestring-env"
     print_info "仮想環境パス: $venv_dir"
     fix_dir_permissions "$SHOESTRING_DIR"
+    # 仮想環境を常に削除・再作成
     if [ -d "$venv_dir" ]; then
         print_warning "既存の仮想環境が見つかりました: $venv_dir。削除して再作成します..."
-        rm -rf "$venv_dir"
+        sudo rm -rf "$venv_dir" || error_exit "仮想環境 $venv_dir の削除に失敗しました。手動で削除してください: sudo rm -rf $venv_dir"
     fi
+    print_info "仮想環境を作成するよ..."
+    /usr/bin/python3.10 -m venv "$venv_dir" >> "$LOG_FILE" 2>&1 || {
+        log "仮想環境作成エラー: $(tail -n 20 "$LOG_FILE")" "ERROR"
+        error_exit "仮想環境の作成に失敗しました。ログを確認してください: cat $LOG_FILE"
+    }
     if [ ! -f "$venv_dir/bin/activate" ]; then
-        print_info "仮想環境を作成するよ..."
-        /usr/bin/python3.10 -m venv "$venv_dir" >> "$LOG_FILE" 2>&1 || error_exit "仮想環境の作成に失敗しました。ログを確認してください: cat $LOG_FILE"
-        source "$venv_dir/bin/activate"
-        local pip_version=$(python3 -m pip --version 2>>"$LOG_FILE")
-        print_info "pip バージョン: $pip_version"
-        # setuptools と pip をインストール
-        retry_command "pip install setuptools" || error_exit "setuptools のインストールに失敗しました。手動でインストールしてください: pip install setuptools"
-        retry_command "pip install --upgrade pip" || error_exit "pip のアップグレードに失敗しました。手動でインストールしてください: pip install --upgrade pip"
-        # symbol-shoestring をインストール
-        print_info "symbol-shoestring をインストール中…"
-        retry_command "pip install symbol-shoestring==0.2.1" || error_exit "symbol-shoestring のインストールに失敗しました。ログを確認してください: cat $LOG_FILE"
-        print_success "symbol-shoestring のインストールに成功しました！"
-        pip list > "$SHOESTRING_DIR/pip_list.log"
-        if grep -q symbol-shoestring "$SHOESTRING_DIR/pip_list.log"; then
-            print_info "symbol-shoestring インストール済み: $(grep symbol-shoestring "$SHOESTRING_DIR/pip_list.log")"
-            local shoestring_version=$(pip show symbol-shoestring | grep Version | awk '{print $2}')
-            log "symbol-shoestring version: $shoestring_version" "INFO"
-        else
-            log "pip list: $(cat "$SHOESTRING_DIR/pip_list.log")" "DEBUG"
-            error_exit "symbol-shoestring が未インストール。インストールコマンド: pip install symbol-shoestring"
-        fi
-        deactivate
+        error_exit "仮想環境の作成に失敗しました。activate ファイルが見つかりません: $venv_dir/bin/activate"
     fi
+    source "$venv_dir/bin/activate" || error_exit "仮想環境の有効化に失敗しました: $venv_dir/bin/activate"
+    local pip_version=$(python3 -m pip --version 2>>"$LOG_FILE")
+    print_info "pip バージョン: $pip_version"
+    # setuptools と pip をインストール
+    retry_command "pip install setuptools" || error_exit "setuptools のインストールに失敗しました。手動でインストールしてください: pip install setuptools"
+    retry_command "pip install --upgrade pip" || error_exit "pip のアップグレードに失敗しました。手動でインストールしてください: pip install --upgrade pip"
+    # symbol-shoestring をインストール
+    print_info "symbol-shoestring をインストール中…"
+    retry_command "pip install symbol-shoestring==0.2.1" || error_exit "symbol-shoestring のインストールに失敗しました。ログを確認してください: cat $LOG_FILE"
+    print_success "symbol-shoestring のインストールに成功しました！"
+    pip list > "$SHOESTRING_DIR/pip_list.log"
+    if grep -q symbol-shoestring "$SHOESTRING_DIR/pip_list.log"; then
+        print_info "symbol-shoestring インストール済み: $(grep symbol-shoestring "$SHOESTRING_DIR/pip_list.log")"
+        local shoestring_version=$(pip show symbol-shoestring | grep Version | awk '{print $2}')
+        log "symbol-shoestring version: $shoestring_version" "INFO"
+    else
+        log "pip list: $(cat "$SHOESTRING_DIR/pip_list.log")" "DEBUG"
+        error_exit "symbol-shoestring が未インストール。インストールコマンド: pip install symbol-shoestring"
+    fi
+    deactivate
     print_info "仮想環境: $venv_dir"
 }
 
@@ -377,6 +404,7 @@ collect_user_info() {
         print_info "$BACKUP_DIR を作成したよ！"
     fi
     print_info "バックアップフォルダ: $BACKUP_DIR"
+    log "SHOESTRING_DIR: $SHOESTRING_DIR, BOOTSTRAP_DIR: $BOOTSTRAP_DIR, BACKUP_DIR: $BACKUP_DIR" "INFO"
     if $SKIP_CONFIRM; then
         ENCRYPTED=false
     else
@@ -526,8 +554,8 @@ check_node_key() {
     return 1
 }
 
-# ディスク容量の確認
-check_disk_space() {
+# ディスク容量の確認（データ用）
+check_disk_space_for_data() {
     local dir="$1"
     local required_space_mb=120000 # 120GB
     local available_space_mb
@@ -535,7 +563,7 @@ check_disk_space() {
     if [ "$available_space_mb" -lt "$required_space_mb" ]; then
         error_exit "ディスク容量が不足してるよ！$dir に ${required_space_mb}MB 必要だけど、${available_space_mb}MB しかない。スペースを空けて！"
     fi
-    print_info "ディスク容量は十分だよ: ${available_space_mb}MB 利用可能"
+    print_info "ディスク容量（データ用）は十分だよ: ${available_space_mb}MB 利用可能"
 }
 
 # データコピー
@@ -547,7 +575,7 @@ copy_data() {
     
     print_info "Bootstrap のデータベースとデータをコピーするよ（再同期を回避！）"
     
-    check_disk_space "$SHOESTRING_DIR"
+    check_disk_space_for_data "$SHOESTRING_DIR"
     
     print_info "Bootstrap と Shoestring のノードを停止するよ"
     if [ -d "$BOOTSTRAP_DIR" ]; then
@@ -608,7 +636,6 @@ setup_shoestring() {
     mkdir -p "$shoestring_subdir" || error_exit "$shoestring_subdir の作成に失敗"
     fix_dir_permissions "$shoestring_subdir"
     local network_type
-    # --- 修正: friendly_name をグローバル変数に設定 ---
     IFS=' ' read -r network_type FRIENDLY_NAME <<< "$(detect_network_and_roles)"
     print_info "検出したネットワーク: $network_type、ノード名: $FRIENDLY_NAME"
     log "Parsed - network_type: $network_type, friendly_name: $FRIENDLY_NAME" "DEBUG"
@@ -619,11 +646,35 @@ setup_shoestring() {
     print_info "shoestring.ini を初期化するよ"
     log "python3 -m shoestring init \"$config_file\" --package $network_type" "DEBUG"
     python3 -m shoestring init "$config_file" --package "$network_type" > "$SHOESTRING_DIR/install_shoestring.log" 2>&1 || error_exit "shoestring.ini の初期化に失敗。手動で確認してね: python3 -m shoestring init $config_file"
-    # --- 修正: shoestring.ini の [node] を friendly_name で更新 ---
-    print_info "shoestring.ini の [node] を friendly_name で更新するよ"
+    # --- 修正: shoestring.ini の [node] を更新 ---
+    print_info "shoestring.ini の [node] を friendly_name とロールで更新するよ"
     local friendly_name_escaped=$(printf '%s' "$FRIENDLY_NAME" | sed 's/[.*]/\\&/g')
     sed -i "/^\[node\]/,/^\[.*\]/ s|^caCommonName\s*=.*|caCommonName = CA $friendly_name_escaped|" "$config_file"
     sed -i "/^\[node\]/,/^\[.*\]/ s|^nodeCommonName\s*=.*|nodeCommonName = $friendly_name_escaped|" "$config_file"
+    # --- 新規追加: lightApi = false を設定 ---
+    sed -i "/^\[node\]/,/^\[.*\]/ s|^lightApi\s*=.*|lightApi = false|" "$config_file"
+    # --- 新規追加: ロールの設定 ---
+    local src_votingkeys="$BOOTSTRAP_DIR/nodes/node/votingkeys"
+    local src_harvester="$BOOTSTRAP_DIR/nodes/node/server-config/resources/config-harvesting.properties"
+    local features="API | HARVESTER"
+    if [ -f "$src_harvester" ]; then
+        print_info "Bootstrap に config-harvesting.properties が見つかりました: $src_harvester。HARVESTER ロールを有効にします。"
+        log "HARVESTER ロール検出: $src_harvester" "INFO"
+    else
+        print_warning "Bootstrap に config-harvesting.properties が見つかりません: $src_harvester。HARVESTER ロールは無効になります。"
+        log "HARVESTER ロールなし: $src_harvester" "WARNING"
+        features="API"
+    fi
+    if [ -d "$src_votingkeys" ]; then
+        print_info "Bootstrap に votingkeys が見つかりました: $src_votingkeys。VOTING ノードとして設定します。"
+        log "VOTING ロール検出: $src_votingkeys" "INFO"
+        features="$features | VOTER"
+    else
+        print_info "Bootstrap に votingkeys が見つかりません: $src_votingkeys。DUAL ノードとして設定します。"
+        log "VOTING ロールなし: $src_votingkeys" "INFO"
+    fi
+    sed -i "/^\[node\]/,/^\[.*\]/ s|^features\s*=.*|features = $features|" "$config_file"
+    log "設定した features: $features" "INFO"
     grep -A 10 '^\[node\]' "$config_file" > "$SHOESTRING_DIR/node_snippet.log" 2>&1
     log "[node] 更新後: $(cat "$SHOESTRING_DIR/node_snippet.log" | sed 's/["'\'']/\\/g')" "DEBUG"
     validate_ini "$config_file"
@@ -637,7 +688,6 @@ setup_shoestring() {
             cp "$src_node_key" "$dest_node_key" || error_exit "node.key.pem のコピーに失敗: $src_node_key"
             print_info "node.key.pem をコピー: $dest_node_key"
         fi
-        # --- 修正: import-bootstrap 前に shoestring.ini をバックアップ ---
         cp "$config_file" "$SHOESTRING_DIR/shoestring.ini.pre-import-$(date +%Y%m%d_%H%M%S)"
         log "python3 -m shoestring import-bootstrap --config \"$config_file\" --bootstrap \"$BOOTSTRAP_DIR\" --include-node-key" "DEBUG"
         python3 -m shoestring import-bootstrap --config "$config_file" --bootstrap "$BOOTSTRAP_DIR" --include-node-key > "$SHOESTRING_DIR/import_bootstrap.log" 2>&1 || error_exit "import-bootstrap に失敗。ログを確認してね: cat $SHOESTRING_DIR/import_bootstrap.log"
@@ -671,15 +721,12 @@ setup_shoestring() {
         python3 -m shoestring pemtool --input "$temp_key_file" --output "$ca_key_path" >> "$SHOESTRING_DIR/pemtool.log" 2>&1 || error_exit "ca.key.pem の生成に失敗したよ。ログを確認してね: cat $SHOESTRING_DIR/pemtool.log"
         rm -f "$temp_key_file"
         print_info "ca.key.pem を生成: $ca_key_path"
-        # --- 修正: import-bootstrap 前に shoestring.ini をバックアップ ---
         cp "$config_file" "$SHOESTRING_DIR/shoestring.ini.pre-import-$(date +%Y%m%d_%H%M%S)"
         log "python3 -m shoestring import-bootstrap --config \"$config_file\" --bootstrap \"$BOOTSTRAP_DIR\"" "DEBUG"
         python3 -m shoestring import-bootstrap --config "$config_file" --bootstrap "$BOOTSTRAP_DIR" > "$SHOESTRING_DIR/import_bootstrap.log" 2>&1 || error_exit "import-bootstrap に失敗。ログを確認してね: cat $SHOESTRING_DIR/import_bootstrap.log"
     fi
     # --- 修正: config-harvesting.properties と votingkeys をコピー ---
-    local src_harvester="$BOOTSTRAP_DIR/nodes/node/server-config/resources/config-harvesting.properties"
     local dest_harvester="$shoestring_subdir/config-harvesting.properties"
-    local src_votingkeys="$BOOTSTRAP_DIR/nodes/node/votingkeys"
     local dest_votingkeys="$shoestring_subdir/votingkeys"
     if [ -f "$src_harvester" ]; then
         cp "$src_harvester" "$dest_harvester" || error_exit "Failed to copy config-harvesting.properties: $src_harvester"
@@ -693,30 +740,40 @@ setup_shoestring() {
         fix_dir_permissions "$dest_votingkeys"
         print_info "votingkeys ディレクトリをコピーしました: $dest_votingkeys"
     else
-        print_warning "votingkeys ディレクトリが見つからないよ: $src_votingkeys。コピーはスキップ。"
+        print_info "votingkeys ディレクトリが見つからないため、コピーはスキップ: $src_votingkeys"
     fi
-    # --- 修正: shoestring.ini の [imports] を更新（harvester に統一） ---
+    # --- 修正: shoestring.ini の [imports] を更新 ---
     local absolute_harvester="$dest_harvester"
     local absolute_votingkeys="$dest_votingkeys"
     local absolute_node_key
     if [ "$NODE_KEY_FOUND" = true ]; then
-        absolute_node_key=$(realpath "$dest_node_key")
+        absolute_node_key=$(realpath "$dest_node_key" 2>/dev/null || echo "$dest_node_key")
     else
-        absolute_node_key=$(realpath "$ca_key_path")
+        absolute_node_key=$(realpath "$ca_key_path" 2>/dev/null || echo "$ca_key_path")
     fi
     print_info "shoestring.ini の [imports] を更新するよ"
     cp "$config_file" "$SHOESTRING_DIR/shoestring.ini.pre-imports-update-$(date +%Y%m%d_%H%M%S)"
     local absolute_harvester_escaped=$(printf '%s' "$absolute_harvester" | sed 's/[.*]/\\&/g')
     local absolute_votingkeys_escaped=$(printf '%s' "$absolute_votingkeys" | sed 's/[.*]/\\&/g')
     local absolute_node_key_escaped=$(printf '%s' "$absolute_node_key" | sed 's/[.*]/\\&/g')
-    sed -i "/^\[imports\]/,/^\[.*\]/ s|^harvester\s*=.*|harvester = $absolute_harvester_escaped|" "$config_file"
-    sed -i "/^\[imports\]/,/^\[.*\]/ s|^voter\s*=.*|voter = $absolute_votingkeys_escaped|" "$config_file"
+    if [ -f "$src_harvester" ]; then
+        sed -i "/^\[imports\]/,/^\[.*\]/ s|^harvester\s*=.*|harvester = $absolute_harvester_escaped|" "$config_file"
+    else
+        sed -i "/^\[imports\]/,/^\[.*\]/ s|^harvester\s*=.*|harvester =|" "$config_file"
+    fi
+    if [ -d "$src_votingkeys" ]; then
+        sed -i "/^\[imports\]/,/^\[.*\]/ s|^voter\s*=.*|voter = $absolute_votingkeys_escaped|" "$config_file"
+    else
+        sed -i "/^\[imports\]/,/^\[.*\]/ s|^voter\s*=.*|voter =|" "$config_file"
+    fi
     sed -i "/^\[imports\]/,/^\[.*\]/ s|^nodeKey\s*=.*|nodeKey = $absolute_node_key_escaped|" "$config_file"
     grep -A 5 '^\[imports\]' "$config_file" > "$SHOESTRING_DIR/imports_snippet.log" 2>&1
     log "[imports] 更新後: $(cat "$SHOESTRING_DIR/imports_snippet.log" | sed 's/["'\'']/\\/g')" "DEBUG"
     # --- 修正: harvester パスの検証 ---
-    if grep -q "^harvester\s*=\s*$absolute_harvester_escaped" "$config_file"; then
+    if [ -f "$src_harvester" ] && grep -q "^harvester\s*=\s*$absolute_harvester_escaped" "$config_file"; then
         print_info "harvester パスが正しく更新されました: $absolute_harvester"
+    elif [ ! -f "$src_harvester" ] && grep -q "^harvester\s*=\s*$" "$config_file"; then
+        print_info "harvester パスは空（HARVESTER ロールなし）"
     else
         print_warning "harvester パスの更新に失敗。手動で確認してね: cat $config_file"
         log "harvester パス更新失敗。現在の [imports]: $(grep -A 5 '^\[imports\]' "$config_file")" "WARNING"
@@ -798,8 +855,7 @@ show_post_migration_guide() {
     echo "  2. ログを確認: cd \"$SHOESTRING_DIR/shoestring\" && docker-compose logs -f"
     echo "  3. REST API 確認: curl http://localhost:3000"
     print_info "ノードタイプを変更したい場合: nano $SHOESTRING_DIR/shoestring/shoestring.ini で [node] の features や lightApi を編集"
-    # --- 修正: friendly_name の安全な参照 ---
-    local display_name="${FRIENDLY_NAME}"
+    local display_name="${FRIENDLY_NAME:-mikun-sai-node}"
     print_info "ノード名は friendlyName（$display_name）で自動設定されました: caCommonName=CA $display_name, nodeCommonName=$display_name"
     print_info "harvester は Shoestring 内のパスに設定されました: $SHOESTRING_DIR/shoestring/config-harvesting.properties"
     print_info "ログの詳細を確認: tail -f $SHOESTRING_DIR/setup.log"
@@ -821,10 +877,8 @@ main() {
     
     log "Starting migration process..." "INFO"
     
-    # 基本的な環境チェック（symbol-bootstrap を除く）
+    # 基本的な環境チェック
     print_info "基本環境をチェックするよ"
-    #check_command "python3" || error_exit "python3 が見つからないよ。インストール: sudo apt install python3"
-    #check_python_version
     
     install_dependencies
     collect_user_info
