@@ -403,9 +403,7 @@ collect_user_info() {
         SHOESTRING_DIR="$(expand_tilde "${input:-$SHOESTRING_DIR_DEFAULT}")"
         fix_dir_permissions "$SHOESTRING_DIR"
         echo -e "${YELLOW}Bootstrap の target フォルダパスを入力してね:${NC}"
-        echo -e "${YELLOW}デフォルト（Enterで選択）: $BOO
-
-TSTRAP_DIR_DEFAULT${NC}"
+        echo -e "${YELLOW}デフォルト（Enterで選択）: $BOOTSTRAP_DIR_DEFAULT${NC}"
         read -r input
         BOOTSTRAP_DIR="$(expand_tilde "${input:-$BOOTSTRAP_DIR_DEFAULT}")"
         if [ -f "$BOOTSTRAP_DIR/docker/docker-compose.yml" ]; then
