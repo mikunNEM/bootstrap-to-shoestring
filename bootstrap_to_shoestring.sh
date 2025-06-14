@@ -39,7 +39,7 @@ else
 fi
 
 # スクリプトバージョン
-SCRIPT_VERSION="2025-06-14-v30"
+SCRIPT_VERSION="2025-06-14-v31"
 
 # グローバル変数
 SHOESTRING_DIR=""
@@ -648,12 +648,13 @@ setup_shoestring() {
     python3 -m shoestring init "$config_file" --package "$network_type" > "$SHOESTRING_DIR/install_shoestring.log" 2>&1 || error_exit "shoestring.ini の初期化に失敗。手動で確認してね: python3 -m shoestring init $config_file"
     # --- 修正: shoestring.ini の [node] を更新 ---
     print_info "shoestring.ini の [node] を friendly_name とロールで更新するよ"
+    cp "$config_file" "$SHOESTRING_DIR/shoestring.ini.pre-node-update-$(date +%Y%m%d_%H%M%S)"
     local friendly_name_escaped=$(printf '%s' "$FRIENDLY_NAME" | sed 's/[.*]/\\&/g')
     sed -i "/^\[node\]/,/^\[.*\]/ s|^caCommonName\s*=.*|caCommonName = CA $friendly_name_escaped|" "$config_file"
     sed -i "/^\[node\]/,/^\[.*\]/ s|^nodeCommonName\s*=.*|nodeCommonName = $friendly_name_escaped|" "$config_file"
-    # --- 新規追加: lightApi = false を設定 ---
+    # --- lightApi = false を設定 ---
     sed -i "/^\[node\]/,/^\[.*\]/ s|^lightApi\s*=.*|lightApi = false|" "$config_file"
-    # --- 新規追加: ロールの設定 ---
+    # --- ロールの設定 ---
     local src_votingkeys="$BOOTSTRAP_DIR/nodes/node/votingkeys"
     local src_harvester="$BOOTSTRAP_DIR/nodes/node/server-config/resources/config-harvesting.properties"
     local features="API | HARVESTER"
@@ -673,8 +674,14 @@ setup_shoestring() {
         print_info "Bootstrap に votingkeys が見つかりません: $src_votingkeys。DUAL ノードとして設定します。"
         log "VOTING ロールなし: $src_votingkeys" "INFO"
     fi
-    sed -i "/^\[node\]/,/^\[.*\]/ s|^features\s*=.*|features = $features|" "$config_file"
-    log "設定した features: $features" "INFO"
+    # --- 修正: features のエスケープ ---
+    log "設定する features: $features" "DEBUG"
+    local features_escaped=$(printf '%s' "$features" | sed 's/|/\\|/g')
+    log "エスケープした features: $features_escaped" "DEBUG"
+    sed -i "/^\[node\]/,/^\[.*\]/ s|^features\s*=.*|features = $features_escaped|" "$config_file" || {
+        log "sed エラー: sed -i '/^\\[node\\]/,/^\\[.*\\]/ s|^features\\s*=.*|features = $features_escaped|' $config_file" "ERROR"
+        error_exit "features の設定に失敗しました。ログを確認してください: cat $SHOESTRING_DIR/setup.log"
+    }
     grep -A 10 '^\[node\]' "$config_file" > "$SHOESTRING_DIR/node_snippet.log" 2>&1
     log "[node] 更新後: $(cat "$SHOESTRING_DIR/node_snippet.log" | sed 's/["'\'']/\\/g')" "DEBUG"
     validate_ini "$config_file"
@@ -725,7 +732,7 @@ setup_shoestring() {
         log "python3 -m shoestring import-bootstrap --config \"$config_file\" --bootstrap \"$BOOTSTRAP_DIR\"" "DEBUG"
         python3 -m shoestring import-bootstrap --config "$config_file" --bootstrap "$BOOTSTRAP_DIR" > "$SHOESTRING_DIR/import_bootstrap.log" 2>&1 || error_exit "import-bootstrap に失敗。ログを確認してね: cat $SHOESTRING_DIR/import_bootstrap.log"
     fi
-    # --- 修正: config-harvesting.properties と votingkeys をコピー ---
+    # --- config-harvesting.properties と votingkeys をコピー ---
     local dest_harvester="$shoestring_subdir/config-harvesting.properties"
     local dest_votingkeys="$shoestring_subdir/votingkeys"
     if [ -f "$src_harvester" ]; then
@@ -742,7 +749,7 @@ setup_shoestring() {
     else
         print_info "votingkeys ディレクトリが見つからないため、コピーはスキップ: $src_votingkeys"
     fi
-    # --- 修正: shoestring.ini の [imports] を更新 ---
+    # --- shoestring.ini の [imports] を更新 ---
     local absolute_harvester="$dest_harvester"
     local absolute_votingkeys="$dest_votingkeys"
     local absolute_node_key
@@ -769,7 +776,7 @@ setup_shoestring() {
     sed -i "/^\[imports\]/,/^\[.*\]/ s|^nodeKey\s*=.*|nodeKey = $absolute_node_key_escaped|" "$config_file"
     grep -A 5 '^\[imports\]' "$config_file" > "$SHOESTRING_DIR/imports_snippet.log" 2>&1
     log "[imports] 更新後: $(cat "$SHOESTRING_DIR/imports_snippet.log" | sed 's/["'\'']/\\/g')" "DEBUG"
-    # --- 修正: harvester パスの検証 ---
+    # --- harvester パスの検証 ---
     if [ -f "$src_harvester" ] && grep -q "^harvester\s*=\s*$absolute_harvester_escaped" "$config_file"; then
         print_info "harvester パスが正しく更新されました: $absolute_harvester"
     elif [ ! -f "$src_harvester" ] && grep -q "^harvester\s*=\s*$" "$config_file"; then
