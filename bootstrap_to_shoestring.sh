@@ -39,7 +39,7 @@ else
 fi
 
 # スクリプトバージョン
-SCRIPT_VERSION="2025-06-14-v35"
+SCRIPT_VERSION="2025-06-14-v36"
 
 # グローバル変数
 SHOESTRING_DIR=""
@@ -419,7 +419,9 @@ collect_user_info() {
         BACKUP_DIR="$(expand_tilde "${input:-$BACKUP_DIR_DEFAULT}")"
     fi
     validate_dir "$BOOTSTRAP_DIR"
-    if [ ! -d "$BACKUP_DIR" ]; then
+    if [ -d "$BACKUP_DIR" ]; then
+        print_info "$BACKUP_DIR が既に存在します。バックアップを上書きします。"
+    else
         mkdir -p "$BACKUP_DIR" || error_exit "$BACKUP_DIR の作成に失敗"
         print_info "$BACKUP_DIR を作成したよ！"
     fi
@@ -608,6 +610,10 @@ validate_bootstrap_dir() {
     fi
     ls -l "$dir" > "$SHOESTRING_DIR/bootstrap_dir_contents.log" 2>&1
     log "Bootstrap ディレクトリ内容: $(cat "$SHOESTRING_DIR/bootstrap_dir_contents.log")" "DEBUG"
+    if [ -d "$BOOTSTRAP_COMPOSE_DIR" ]; then
+        ls -l "$BOOTSTRAP_COMPOSE_DIR" > "$SHOESTRING_DIR/bootstrap_compose_dir_contents.log" 2>&1
+        log "Bootstrap Compose ディレクトリ内容: $(cat "$SHOESTRING_DIR/bootstrap_compose_dir_contents.log")" "DEBUG"
+    fi
     print_info "Bootstrap ディレクトリ検証OK: $dir"
 }
 
@@ -626,8 +632,8 @@ copy_data() {
     # ディスク容量チェック
     check_disk_space_for_data "$SHOESTRING_DIR"
     
-    # Bootstrap と Shoestring のノードを停止
-    print_info "Bootstrap と Shoestring のノードを安全に停止するよ"
+    # Bootstrap ノードを停止
+    print_info "Bootstrap のノードを安全に停止するよ"
     log "現在の Docker コンテナ: $(docker ps -a)" "DEBUG"
     
     # Bootstrap ノードの安全停止
@@ -653,16 +659,6 @@ copy_data() {
         fi
     else
         error_exit "Bootstrap ディレクトリが見つからないよ: $BOOTSTRAP_COMPOSE_DIR"
-    fi
-    
-    # Shoestring ノードの停止
-    if [ -d "$SHOESTRING_DIR/shoestring" ]; then
-        print_info "Shoestring ノードを停止するよ..."
-        cd "$SHOESTRING_DIR/shoestring" || error_exit "Shoestring ディレクトリに移動できないよ: $SHOESTRING_DIR/shoestring"
-        if [ -f "docker-compose.yml" ]; then
-            sudo docker-compose down >>"$SHOESTRING_DIR/data_copy.log" 2>&1 || print_warning "Shoestring のノード停止に失敗したけど、続行するよ"
-            print_info "Shoestring ノードを停止したよ！"
-        fi
     fi
     
     # データコピー前にバックアップ
