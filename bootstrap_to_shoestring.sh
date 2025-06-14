@@ -39,7 +39,7 @@ else
 fi
 
 # スクリプトバージョン
-SCRIPT_VERSION="2025-06-14-v36"
+SCRIPT_VERSION="2025-06-14-v37"
 
 # グローバル変数
 SHOESTRING_DIR=""
@@ -331,13 +331,13 @@ install_dependencies() {
     print_info "symbol-shoestring をインストール中…"
     retry_command "pip install symbol-shoestring==0.2.1" || error_exit "symbol-shoestring のインストールに失敗しました。ログを確認してください: cat $LOG_FILE"
     print_success "symbol-shoestring のインストールに成功しました！"
-    pip list > "$SHOESTRING_DIR/pip_list.log"
-    if grep -q symbol-shoestring "$SHOESTRING_DIR/pip_list.log"; then
-        print_info "symbol-shoestring インストール済み: $(grep symbol-shoestring "$SHOESTRING_DIR/pip_list.log")"
+    pip list > "$SHOESTRING_DIR/log/pip_list.log"
+    if grep -q symbol-shoestring "$SHOESTRING_DIR/log/pip_list.log"; then
+        print_info "symbol-shoestring インストール済み: $(grep symbol-shoestring "$SHOESTRING_DIR/log/pip_list.log")"
         local shoestring_version=$(pip show symbol-shoestring | grep Version | awk '{print $2}')
         log "symbol-shoestring version: $shoestring_version" "INFO"
     else
-        log "pip list: $(cat "$SHOESTRING_DIR/pip_list.log")" "DEBUG"
+        log "pip list: $(cat "$SHOESTRING_DIR/log/pip_list.log")" "DEBUG"
         error_exit "symbol-shoestring が未インストール。インストールコマンド: pip install symbol-shoestring"
     fi
     deactivate
@@ -403,7 +403,9 @@ collect_user_info() {
         SHOESTRING_DIR="$(expand_tilde "${input:-$SHOESTRING_DIR_DEFAULT}")"
         fix_dir_permissions "$SHOESTRING_DIR"
         echo -e "${YELLOW}Bootstrap の target フォルダパスを入力してね:${NC}"
-        echo -e "${YELLOW}デフォルト（Enterで選択）: $BOOTSTRAP_DIR_DEFAULT${NC}"
+        echo -e "${YELLOW}デフォルト（Enterで選択）: $BOO
+
+TSTRAP_DIR_DEFAULT${NC}"
         read -r input
         BOOTSTRAP_DIR="$(expand_tilde "${input:-$BOOTSTRAP_DIR_DEFAULT}")"
         if [ -f "$BOOTSTRAP_DIR/docker/docker-compose.yml" ]; then
@@ -476,8 +478,8 @@ create_backup() {
 validate_ini() {
     local ini_file="$1"
     print_info "$ini_file を検証するよ"
-    python3 -c "import configparser; config = configparser.ConfigParser(); config.read('$ini_file')" > "$SHOESTRING_DIR/validate_ini.log" 2>&1 || {
-        log "INI 検証エラー: $(cat "$SHOESTRING_DIR/validate_ini.log")" "ERROR"
+    python3 -c "import configparser; config = configparser.ConfigParser(); config.read('$ini_file')" > "$SHOESTRING_DIR/log/validate_ini.log" 2>&1 || {
+        log "INI 検証エラー: $(cat "$SHOESTRING_DIR/log/validate_ini.log")" "ERROR"
         error_exit "$ini_file の形式が不正だよ。内容を確認してね: cat $ini_file"
     }
     print_info "$ini_file の形式はOK！"
@@ -608,11 +610,11 @@ validate_bootstrap_dir() {
     if [ ! -d "$dir/databases/db" ] && [ ! -d "$dir/nodes/node/data" ]; then
         error_exit "データディレクトリが見つからないよ: $dir/databases/db または $dir/nodes/node/data。Bootstrap のデータがあるか確認してね！"
     fi
-    ls -l "$dir" > "$SHOESTRING_DIR/bootstrap_dir_contents.log" 2>&1
-    log "Bootstrap ディレクトリ内容: $(cat "$SHOESTRING_DIR/bootstrap_dir_contents.log")" "DEBUG"
+    ls -l "$dir" > "$SHOESTRING_DIR/log/bootstrap_dir_contents.log" 2>&1
+    log "Bootstrap ディレクトリ内容: $(cat "$SHOESTRING_DIR/log/bootstrap_dir_contents.log")" "DEBUG"
     if [ -d "$BOOTSTRAP_COMPOSE_DIR" ]; then
-        ls -l "$BOOTSTRAP_COMPOSE_DIR" > "$SHOESTRING_DIR/bootstrap_compose_dir_contents.log" 2>&1
-        log "Bootstrap Compose ディレクトリ内容: $(cat "$SHOESTRING_DIR/bootstrap_compose_dir_contents.log")" "DEBUG"
+        ls -l "$BOOTSTRAP_COMPOSE_DIR" > "$SHOESTRING_DIR/log/bootstrap_compose_dir_contents.log" 2>&1
+        log "Bootstrap Compose ディレクトリ内容: $(cat "$SHOESTRING_DIR/log/bootstrap_compose_dir_contents.log")" "DEBUG"
     fi
     print_info "Bootstrap ディレクトリ検証OK: $dir"
 }
@@ -642,13 +644,13 @@ copy_data() {
         cd "$BOOTSTRAP_COMPOSE_DIR" || error_exit "Bootstrap ディレクトリに移動できないよ: $BOOTSTRAP_COMPOSE_DIR"
         if [ -f "docker-compose.yml" ]; then
             print_info "Bootstrap ノードを停止中（最大30秒待つよ）..."
-            sudo docker-compose down >>"$SHOESTRING_DIR/data_copy.log" 2>&1 || {
-                log "Bootstrap 停止エラー: $(tail -n 20 "$SHOESTRING_DIR/data_copy.log")" "ERROR"
-                error_exit "Bootstrap のノード停止に失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
+            sudo docker-compose down >>"$SHOESTRING_DIR/log/data_copy.log" 2>&1 || {
+                log "Bootstrap 停止エラー: $(tail -n 20 "$SHOESTRING_DIR/log/data_copy.log")" "ERROR"
+                error_exit "Bootstrap のノード停止に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
             }
             # 停止確認
             local containers
-            containers=$(docker-compose ps -q 2>>"$SHOESTRING_DIR/data_copy.log")
+            containers=$(docker-compose ps -q 2>>"$SHOESTRING_DIR/log/data_copy.log")
             if [ -n "$containers" ]; then
                 log "残存コンテナ: $(docker ps -a | grep "$BOOTSTRAP_COMPOSE_DIR")" "ERROR"
                 error_exit "Bootstrap ノードがまだ動いてるよ！手動で停止してね: cd $BOOTSTRAP_COMPOSE_DIR && sudo docker-compose down"
@@ -666,11 +668,11 @@ copy_data() {
     local data_backup_dir="$BACKUP_DIR/data_backup_$(date +%Y%m%d_%H%M%S)"
     mkdir -p "$data_backup_dir"
     if [ -d "$src_db" ]; then
-        cp -r "$src_db" "$data_backup_dir/db" 2>>"$SHOESTRING_DIR/data_copy.log" || print_warning "データベースバックアップに失敗したけど、続行するよ: $src_db"
+        cp -r "$src_db" "$data_backup_dir/db" 2>>"$SHOESTRING_DIR/log/data_copy.log" || print_warning "データベースバックアップに失敗したけど、続行するよ: $src_db"
         print_info "データベースをバックアップしたよ: $data_backup_dir/db"
     fi
     if [ -d "$src_data" ]; then
-        cp -r "$src_data" "$data_backup_dir/data" 2>>"$SHOESTRING_DIR/data_copy.log" || print_warning "チェーンデータバックアップに失敗したけど、続行するよ: $src_data"
+        cp -r "$src_data" "$data_backup_dir/data" 2>>"$SHOESTRING_DIR/log/data_copy.log" || print_warning "チェーンデータバックアップに失敗したけど、続行するよ: $src_data"
         print_info "チェーンデータをバックアップしたよ: $data_backup_dir/data"
     fi
     
@@ -680,15 +682,15 @@ copy_data() {
         fix_dir_permissions "$dest_db"
         if command -v pv >/dev/null 2>&1; then
             echo -e "${YELLOW}データベースコピー中... sudo のパスワードを入力してね:${NC}"
-            print_info "データベース（db）をコピー中（進捗は画面に表示、詳細は: $SHOESTRING_DIR/data_copy.log）"
-            sudo tar -C "$src_db" -cf - . 2>>"$SHOESTRING_DIR/data_copy.log" \
+            print_info "データベース（db）をコピー中（進捗は画面に表示、詳細は: $SHOESTRING_DIR/log/data_copy.log）"
+            sudo tar -C "$src_db" -cf - . 2>>"$SHOESTRING_DIR/log/data_copy.log" \
               | pv \
-              | sudo tar -C "$dest_db" -xf - 2>>"$SHOESTRING_DIR/data_copy.log" \
-              || error_exit "データベースのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
+              | sudo tar -C "$dest_db" -xf - 2>>"$SHOESTRING_DIR/log/data_copy.log" \
+              || error_exit "データベースのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
             print_info "データベースコピー完了！"
         else
-            sudo cp -a "$src_db/." "$dest_db/" 2>>"$SHOESTRING_DIR/data_copy.log" \
-              || error_exit "データベースコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
+            sudo cp -a "$src_db/." "$dest_db/" 2>>"$SHOESTRING_DIR/log/data_copy.log" \
+              || error_exit "データベースコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
             print_info "データベースコピー完了！（進捗なし）"
         fi
         print_info "データベースをコピーしたよ: $dest_db"
@@ -703,14 +705,14 @@ copy_data() {
         if command -v pv >/dev/null 2>&1; then
             echo -e "${YELLOW}チェーンデータコピー中... sudo のパスワードを入力してね:${NC}"
             print_info "チェーンデータをコピー中（進捗は画面に表示）…"
-            sudo tar -C "$src_data" -cf - . 2>>"$SHOESTRING_DIR/data_copy.log" \
+            sudo tar -C "$src_data" -cf - . 2>>"$SHOESTRING_DIR/log/data_copy.log" \
               | pv \
-              | sudo tar -C "$dest_data" -xf - 2>>"$SHOESTRING_DIR/data_copy.log" \
-              || error_exit "チェーンデータのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
+              | sudo tar -C "$dest_data" -xf - 2>>"$SHOESTRING_DIR/log/data_copy.log" \
+              || error_exit "チェーンデータのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
             print_info "チェーンデータコピー完了！"
         else
-            sudo cp -a "$src_data/." "$dest_data/" 2>>"$SHOESTRING_DIR/data_copy.log" \
-              || error_exit "チェーンデータコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
+            sudo cp -a "$src_data/." "$dest_data/" 2>>"$SHOESTRING_DIR/log/data_copy.log" \
+              || error_exit "チェーンデータコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
             print_info "データコピー完了！（進捗なし）"
         fi
         print_info "データをコピーしたよ: $dest_data"
@@ -736,10 +738,10 @@ setup_shoestring() {
     local config_file="$shoestring_subdir/shoestring.ini"
     print_info "shoestring.ini を初期化するよ"
     log "python3 -m shoestring init \"$config_file\" --package $network_type" "DEBUG"
-    python3 -m shoestring init "$config_file" --package "$network_type" > "$SHOESTRING_DIR/install_shoestring.log" 2>&1 || error_exit "shoestring.ini の初期化に失敗。手動で確認してね: python3 -m shoestring init $config_file"
+    python3 -m shoestring init "$config_file" --package "$network_type" > "$SHOESTRING_DIR/log/install_shoestring.log" 2>&1 || error_exit "shoestring.ini の初期化に失敗。手動で確認してね: python3 -m shoestring init $config_file"
     # --- shoestring.ini の [node] を更新 ---
     print_info "shoestring.ini の [node] を friendly_name とロールで更新するよ"
-    cp "$config_file" "$SHOESTRING_DIR/shoestring.ini.pre-node-update-$(date +%Y%m%d_%H%M%S)"
+    cp "$config_file" "$SHOESTRING_DIR/log/shoestring.ini.pre-node-update-$(date +%Y%m%d_%H%M%S)"
     local friendly_name_escaped=$(printf '%s' "$FRIENDLY_NAME" | sed 's/[.*]/\\&/g')
     sed -i "/^\[node\]/,/^\[.*\]/ s|^caCommonName\s*=.*|caCommonName = CA $friendly_name_escaped|" "$config_file"
     sed -i "/^\[node\]/,/^\[.*\]/ s|^nodeCommonName\s*=.*|nodeCommonName = $friendly_name_escaped|" "$config_file"
@@ -771,10 +773,10 @@ setup_shoestring() {
     log "エスケープした features: $features_escaped" "DEBUG"
     sed -i "/^\[node\]/,/^\[.*\]/ s|^features\s*=.*|features = $features_escaped|" "$config_file" || {
         log "sed エラー: sed -i '/^\\[node\\]/,/^\\[.*\\]/ s|^features\\s*=.*|features = $features_escaped|' $config_file" "ERROR"
-        error_exit "features の設定に失敗しました。ログを確認してください: cat $SHOESTRING_DIR/setup.log"
+        error_exit "features の設定に失敗しました。ログを確認してください: cat $SHOESTRING_DIR/log/setup.log"
     }
-    grep -A 10 '^\[node\]' "$config_file" > "$SHOESTRING_DIR/node_snippet.log" 2>&1
-    log "[node] 更新後: $(cat "$SHOESTRING_DIR/node_snippet.log" | sed 's/["'\'']/\\/g')" "DEBUG"
+    grep -A 10 '^\[node\]' "$config_file" > "$SHOESTRING_DIR/log/node_snippet.log" 2>&1
+    log "[node] 更新後: $(cat "$SHOESTRING_DIR/log/node_snippet.log" | sed 's/["'\'']/\\/g')" "DEBUG"
     validate_ini "$config_file"
     local ca_key_path="$shoestring_subdir/ca.key.pem"
     check_node_key
@@ -786,9 +788,9 @@ setup_shoestring() {
             cp "$src_node_key" "$dest_node_key" || error_exit "node.key.pem のコピーに失敗: $src_node_key"
             print_info "node.key.pem をコピー: $dest_node_key"
         fi
-        cp "$config_file" "$SHOESTRING_DIR/shoestring.ini.pre-import-$(date +%Y%m%d_%H%M%S)"
+        cp "$config_file" "$SHOESTRING_DIR/log/shoestring.ini.pre-import-$(date +%Y%m%d_%H%M%S)"
         log "python3 -m shoestring import-bootstrap --config \"$config_file\" --bootstrap \"$BOOTSTRAP_DIR\" --include-node-key" "DEBUG"
-        python3 -m shoestring import-bootstrap --config "$config_file" --bootstrap "$BOOTSTRAP_DIR" --include-node-key > "$SHOESTRING_DIR/import_bootstrap.log" 2>&1 || error_exit "import-bootstrap に失敗。ログを確認してね: cat $SHOESTRING_DIR/import_bootstrap.log"
+        python3 -m shoestring import-bootstrap --config "$config_file" --bootstrap "$BOOTSTRAP_DIR" --include-node-key > "$SHOESTRING_DIR/log/import_bootstrap.log" 2>&1 || error_exit "import-bootstrap に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/import_bootstrap.log"
         if [ ! -f "$ca_key_path" ]; then
             print_info "新しい ca.key.pem を生成するよ"
             log "新しい ca.key.pem を生成するよ" "INFO"
@@ -799,7 +801,7 @@ setup_shoestring() {
             local temp_key_file=$(mktemp)
             echo "$private_key" > "$temp_key_file"
             log "プライベートキー（最初の12文字）: ${private_key:0:12}..." "DEBUG"
-            python3 -m shoestring pemtool --input "$temp_key_file" --output "$ca_key_path" >> "$SHOESTRING_DIR/pemtool.log" 2>&1 || error_exit "ca.key.pem の生成に失敗したよ。ログを確認してね: cat $SHOESTRING_DIR/pemtool.log"
+            python3 -m shoestring pemtool --input "$temp_key_file" --output "$ca_key_path" >> "$SHOESTRING_DIR/log/pemtool.log" 2>&1 || error_exit "ca.key.pem の生成に失敗したよ。ログを確認してね: cat $SHOESTRING_DIR/log/pemtool.log"
             rm -f "$temp_key_file"
             print_info "ca.key.pem を生成: $ca_key_path"
         else
@@ -816,12 +818,12 @@ setup_shoestring() {
         local temp_key_file=$(mktemp)
         echo "$private_key" > "$temp_key_file"
         log "プライベートキー（最初の12文字）: ${private_key:0:12}..." "DEBUG"
-        python3 -m shoestring pemtool --input "$temp_key_file" --output "$ca_key_path" >> "$SHOESTRING_DIR/pemtool.log" 2>&1 || error_exit "ca.key.pem の生成に失敗したよ。ログを確認してね: cat $SHOESTRING_DIR/pemtool.log"
+        python3 -m shoestring pemtool --input "$temp_key_file" --output "$ca_key_path" >> "$SHOESTRING_DIR/log/pemtool.log" 2>&1 || error_exit "ca.key.pem の生成に失敗したよ。ログを確認してね: cat $SHOESTRING_DIR/log/pemtool.log"
         rm -f "$temp_key_file"
         print_info "ca.key.pem を生成: $ca_key_path"
-        cp "$config_file" "$SHOESTRING_DIR/shoestring.ini.pre-import-$(date +%Y%m%d_%H%M%S)"
+        cp "$config_file" "$SHOESTRING_DIR/log/shoestring.ini.pre-import-$(date +%Y%m%d_%H%M%S)"
         log "python3 -m shoestring import-bootstrap --config \"$config_file\" --bootstrap \"$BOOTSTRAP_DIR\"" "DEBUG"
-        python3 -m shoestring import-bootstrap --config "$config_file" --bootstrap "$BOOTSTRAP_DIR" > "$SHOESTRING_DIR/import_bootstrap.log" 2>&1 || error_exit "import-bootstrap に失敗。ログを確認してね: cat $SHOESTRING_DIR/import_bootstrap.log"
+        python3 -m shoestring import-bootstrap --config "$config_file" --bootstrap "$BOOTSTRAP_DIR" > "$SHOESTRING_DIR/log/import_bootstrap.log" 2>&1 || error_exit "import-bootstrap に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/import_bootstrap.log"
     fi
     # --- config-harvesting.properties と votingkeys をコピー ---
     local dest_harvester="$shoestring_subdir/config-harvesting.properties"
@@ -850,7 +852,7 @@ setup_shoestring() {
         absolute_node_key=$(realpath "$ca_key_path" 2>/dev/null || echo "$ca_key_path")
     fi
     print_info "shoestring.ini の [imports] を更新するよ"
-    cp "$config_file" "$SHOESTRING_DIR/shoestring.ini.pre-imports-update-$(date +%Y%m%d_%H%M%S)"
+    cp "$config_file" "$SHOESTRING_DIR/log/shoestring.ini.pre-imports-update-$(date +%Y%m%d_%H%M%S)"
     local absolute_harvester_escaped=$(printf '%s' "$absolute_harvester" | sed 's/[.*]/\\&/g')
     local absolute_votingkeys_escaped=$(printf '%s' "$absolute_votingkeys" | sed 's/[.*]/\\&/g')
     local absolute_node_key_escaped=$(printf '%s' "$absolute_node_key" | sed 's/[.*]/\\&/g')
@@ -865,8 +867,8 @@ setup_shoestring() {
         sed -i "/^\[imports\]/,/^\[.*\]/ s|^voter\s*=.*|voter =|" "$config_file"
     fi
     sed -i "/^\[imports\]/,/^\[.*\]/ s|^nodeKey\s*=.*|nodeKey = $absolute_node_key_escaped|" "$config_file"
-    grep -A 5 '^\[imports\]' "$config_file" > "$SHOESTRING_DIR/imports_snippet.log" 2>&1
-    log "[imports] 更新後: $(cat "$SHOESTRING_DIR/imports_snippet.log" | sed 's/["'\'']/\\/g')" "DEBUG"
+    grep -A 5 '^\[imports\]' "$config_file" > "$SHOESTRING_DIR/log/imports_snippet.log" 2>&1
+    log "[imports] 更新後: $(cat "$SHOESTRING_DIR/log/imports_snippet.log" | sed 's/["'\'']/\\/g')" "DEBUG"
     # --- harvester パスの検証 ---
     if [ -f "$src_harvester" ] && grep -q "^harvester\s*=\s*$absolute_harvester_escaped" "$config_file"; then
         print_info "harvester パスが正しく更新されました: $absolute_harvester"
@@ -910,24 +912,24 @@ EOF
     print_info "overrides.ini を生成しました"
     print_info "Shoestring のセットアップを実行するよ"
     log "python3 -m shoestring setup --ca-key-path \"$ca_key_path\" --config \"$config_file\" --overrides \"$overrides_file\" --directory \"$shoestring_subdir\" --package $network_type" "DEBUG"
-    python3 -m shoestring setup --ca-key-path "$ca_key_path" --config "$config_file" --overrides "$overrides_file" --directory "$shoestring_subdir" --package "$network_type" > "$SHOESTRING_DIR/setup_shoestring.log" 2>&1 || error_exit "Shoestring ノードのセットアップに失敗。ログを確認してね: cat $SHOESTRING_DIR/setup_shoestring.log"
+    python3 -m shoestring setup --ca-key-path "$ca_key_path" --config "$config_file" --overrides "$overrides_file" --directory "$shoestring_subdir" --package "$network_type" > "$SHOESTRING_DIR/log/setup_shoestring.log" 2>&1 || error_exit "Shoestring ノードのセットアップに失敗。ログを確認してね: cat $SHOESTRING_DIR/log/setup_shoestring.log"
     copy_data
     print_info "Shoestring ノードを起動するよ"
     cd "$shoestring_subdir" || error_exit "ディレクトリ移動に失敗したよ: $shoestring_subdir"
     print_info "Docker の古いリソースをクリアするよ(ネットワーク整理)"
-    docker system prune -a --volumes --force >> "$SHOESTRING_DIR/docker_cleanup.log" 2>&1
+    docker system prune -a --volumes --force >> "$SHOESTRING_DIR/log/docker_cleanup.log" 2>&1
     # ポート競合チェック
     print_info "ポート競合をチェックするよ..."
     if command -v netstat >/dev/null 2>&1; then
-        netstat -tuln | grep -E ':3000' > "$SHOESTRING_DIR/port_check.log" 2>&1
-        if [ -s "$SHOESTRING_DIR/port_check.log" ]; then
-            log "ポート競合検出: $(cat "$SHOESTRING_DIR/port_check.log")" "ERROR"
-            error_exit "ポート3000が使用中だよ！Bootstrap や他のプロセスを停止してね: cat $SHOESTRING_DIR/port_check.log"
+        netstat -tuln | grep -E ':3000' > "$SHOESTRING_DIR/log/port_check.log" 2>&1
+        if [ -s "$SHOESTRING_DIR/log/port_check.log" ]; then
+            log "ポート競合検出: $(cat "$SHOESTRING_DIR/log/port_check.log")" "ERROR"
+            error_exit "ポート3000が使用中だよ！Bootstrap や他のプロセスを停止してね: cat $SHOESTRING_DIR/log/port_check.log"
         fi
     else
         print_warning "netstat が見つからないよ。ポート競合チェックをスキップ。"
     fi
-    docker-compose up -d > "$SHOESTRING_DIR/docker_compose.log" 2>&1 || error_exit "Shoestring ノードの起動に失敗。ログを確認してね: cat $SHOESTRING_DIR/docker_compose.log"
+    docker-compose up -d > "$SHOESTRING_DIR/log/docker_compose.log" 2>&1 || error_exit "Shoestring ノードの起動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/docker_compose.log"
     print_info "Shoestring ノードを起動したよ！"
     deactivate
 }
@@ -947,7 +949,7 @@ show_post_migration_guide() {
     echo "  - ハーベスト設定: $SHOESTRING_DIR/shoestring/config-harvesting.properties"
     echo "  - 投票鍵ディレクトリ: $SHOESTRING_DIR/shoestring/votingkeys"
     echo "  - バックアップ: $BACKUP_DIR"
-    echo "  - ログ: $SHOESTRING_DIR/setup.log"
+    echo "  - ログ: $SHOESTRING_DIR/log/setup.log"
     echo "  - 設定: $SHOESTRING_DIR/shoestring/shoestring.ini"
     echo "  - 上書き設定: $SHOESTRING_DIR/shoestring/overrides.ini"
     echo "  - Docker Compose: $SHOESTRING_DIR/shoestring/docker-compose.yml"
@@ -967,8 +969,8 @@ show_post_migration_guide() {
     local display_name="${FRIENDLY_NAME:-mikun-sai-node}"
     print_info "ノード名は friendlyName（$display_name）で自動設定されました: caCommonName=CA $display_name, nodeCommonName=$display_name"
     print_info "harvester は Shoestring 内のパスに設定されました: $SHOESTRING_DIR/shoestring/config-harvesting.properties"
-    print_info "ログの詳細を確認: tail -f $SHOESTRING_DIR/setup.log"
-    print_info "データコピーエラー: cat $SHOESTRING_DIR/data_copy.log"
+    print_info "ログの詳細を確認: tail -f $SHOESTRING_DIR/log/setup.log"
+    print_info "データコピーエラー: cat $SHOESTRING_DIR/log/data_copy.log"
     print_info "import-bootstrap が失敗した場合は、yq を使った方法を試してね: https://github.com/mikunNEM/bootstrap-to-shoestring"
     print_info "サポート: https://x.com/mikunNEM"
 }
@@ -979,7 +981,9 @@ main() {
     
     # グローバル変数を初期化
     auto_detect_dirs
-    LOG_FILE="$SHOESTRING_DIR/setup.log"
+    mkdir -p "$SHOESTRING_DIR/log" || error_exit "ログディレクトリ $SHOESTRING_DIR/log の作成に失敗"
+    fix_dir_permissions "$SHOESTRING_DIR/log"
+    LOG_FILE="$SHOESTRING_DIR/log/setup.log"
     
     # ログディレクトリを作成
     mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
@@ -993,7 +997,7 @@ main() {
     collect_user_info
     
     # LOG_FILE と関連変数を再設定
-    LOG_FILE="$SHOESTRING_DIR/setup.log"
+    LOG_FILE="$SHOESTRING_DIR/log/setup.log"
     ADDRESSES_YML="$BOOTSTRAP_DIR/addresses.yml"
     SHOESTRING_RESOURCES="$SHOESTRING_DIR/shoestring"
     
