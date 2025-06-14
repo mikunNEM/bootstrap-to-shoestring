@@ -39,7 +39,7 @@ else
 fi
 
 # スクリプトバージョン
-SCRIPT_VERSION="2025-06-14-v31"
+SCRIPT_VERSION="2025-06-14-v34"
 
 # グローバル変数
 SHOESTRING_DIR=""
@@ -352,7 +352,7 @@ auto_detect_dirs() {
         "$(find "$HOME" -maxdepth 3 -type d -name target 2>/dev/null | grep symbol-bootstrap | head -n 1)"
     )
     for dir in "${bootstrap_dirs[@]}"; do
-        if [ -d "$dir" ] && [ -f "$dir/addresses.yml" ]; then
+        if [ -d "$dir" ] && [ -f "$dir/addresses.yml" ] && [ -f "$dir/docker-compose.yml" ]; then
             BOOTSTRAP_DIR_DEFAULT="$dir"
             print_info "Bootstrap フォルダを検出: $BOOTSTRAP_DIR_DEFAULT"
             break
@@ -566,6 +566,25 @@ check_disk_space_for_data() {
     print_info "ディスク容量（データ用）は十分だよ: ${available_space_mb}MB 利用可能"
 }
 
+# Bootstrap パスの検証
+validate_bootstrap_dir() {
+    local dir="$1"
+    print_info "Bootstrap ディレクトリを検証するよ: $dir"
+    log "Validating BOOTSTRAP_DIR: $dir" "DEBUG"
+    if [ ! -d "$dir" ]; then
+        error_exit "Bootstrap ディレクトリが見つからないよ: $dir。パスを確認してね！"
+    fi
+    if [ ! -f "$dir/docker-compose.yml" ]; then
+        error_exit "docker-compose.yml が見つからないよ: $dir/docker-compose.yml。Bootstrap のセットアップを確認してね！"
+    fi
+    if [ ! -d "$dir/databases/db" ] && [ ! -d "$dir/nodes/node/data" ]; then
+        error_exit "データディレクトリが見つからないよ: $dir/databases/db または $dir/nodes/node/data。Bootstrap のデータがあるか確認してね！"
+    fi
+    ls -l "$dir" > "$SHOESTRING_DIR/bootstrap_dir_contents.log" 2>&1
+    log "Bootstrap ディレクトリ内容: $(cat "$SHOESTRING_DIR/bootstrap_dir_contents.log")" "DEBUG"
+    print_info "Bootstrap ディレクトリ検証OK: $dir"
+}
+
 # データコピー
 copy_data() {
     local src_db="$BOOTSTRAP_DIR/databases/db"
@@ -575,16 +594,65 @@ copy_data() {
     
     print_info "Bootstrap のデータベースとデータをコピーするよ（再同期を回避！）"
     
+    # Bootstrap ディレクトリ検証
+    validate_bootstrap_dir "$BOOTSTRAP_DIR"
+    
+    # ディスク容量チェック
     check_disk_space_for_data "$SHOESTRING_DIR"
     
-    print_info "Bootstrap と Shoestring のノードを停止するよ"
+    # Bootstrap と Shoestring のノードを停止
+    print_info "Bootstrap と Shoestring のノードを安全に停止するよ"
+    log "現在の Docker コンテナ: $(docker ps -a)" "DEBUG"
+    
+    # Bootstrap ノードの安全停止
     if [ -d "$BOOTSTRAP_DIR" ]; then
-        cd "$BOOTSTRAP_DIR" && sudo docker-compose down >> "$SHOESTRING_DIR/data_copy.log" 2>&1 || print_warning "Bootstrap のノード停止に失敗したけど、続行するよ"
-    fi
-    if [ -d "$SHOESTRING_DIR/shoestring" ]; then
-        cd "$SHOESTRING_DIR/shoestring" && sudo docker-compose down >> "$SHOESTRING_DIR/data_copy.log" 2>&1 || print_warning "Shoestring のノード停止に失敗したけど、続行するよ"
+        print_info "Bootstrap ノードを安全に停止するよ: $BOOTSTRAP_DIR"
+        cd "$BOOTSTRAP_DIR" || error_exit "Bootstrap ディレクトリに移動できないよ: $BOOTSTRAP_DIR"
+        if [ -f "docker-compose.yml" ]; then
+            print_info "Bootstrap ノードを停止中（最大30秒待つよ）..."
+            sudo docker-compose down >>"$SHOESTRING_DIR/data_copy.log" 2>&1 || {
+                log "Bootstrap 停止エラー: $(tail -n 20 "$SHOESTRING_DIR/data_copy.log")" "ERROR"
+                error_exit "Bootstrap のノード停止に失敗。ログを確認してね: cat $SHOESTRING_DIR/data_copy.log"
+            }
+            # 停止確認
+            local containers
+            containers=$(docker-compose ps -q 2>>"$SHOESTRING_DIR/data_copy.log")
+            if [ -n "$containers" ]; then
+                log "残存コンテナ: $(docker ps -a | grep "$BOOTSTRAP_DIR")" "ERROR"
+                error_exit "Bootstrap ノードがまだ動いてるよ！手動で停止してね: cd $BOOTSTRAP_DIR && sudo docker-compose down"
+            fi
+            print_info "Bootstrap ノードを安全に停止したよ！"
+        else
+            error_exit "docker-compose.yml が見つからないよ: $BOOTSTRAP_DIR/docker-compose.yml"
+        fi
+    else
+        error_exit "Bootstrap ディレクトリが見つからないよ: $BOOTSTRAP_DIR"
     fi
     
+    # Shoestring ノードの停止
+    if [ -d "$SHOESTRING_DIR/shoestring" ]; then
+        print_info "Shoestring ノードを停止するよ..."
+        cd "$SHOESTRING_DIR/shoestring" || error_exit "Shoestring ディレクトリに移動できないよ: $SHOESTRING_DIR/shoestring"
+        if [ -f "docker-compose.yml" ]; then
+            sudo docker-compose down >>"$SHOESTRING_DIR/data_copy.log" 2>&1 || print_warning "Shoestring のノード停止に失敗したけど、続行するよ"
+            print_info "Shoestring ノードを停止したよ！"
+        fi
+    fi
+    
+    # データコピー前にバックアップ
+    print_info "データコピー前にバックアップを取るよ..."
+    local data_backup_dir="$BACKUP_DIR/data_backup_$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$data_backup_dir"
+    if [ -d "$src_db" ]; then
+        cp -r "$src_db" "$data_backup_dir/db" 2>>"$SHOESTRING_DIR/data_copy.log" || print_warning "データベースバックアップに失敗したけど、続行するよ: $src_db"
+        print_info "データベースをバックアップしたよ: $data_backup_dir/db"
+    fi
+    if [ -d "$src_data" ]; then
+        cp -r "$src_data" "$data_backup_dir/data" 2>>"$SHOESTRING_DIR/data_copy.log" || print_warning "チェーンデータバックアップに失敗したけど、続行するよ: $src_data"
+        print_info "チェーンデータをバックアップしたよ: $data_backup_dir/data"
+    fi
+    
+    # データベースコピー
     if [ -d "$src_db" ]; then
         mkdir -p "$dest_db" || error_exit "$dest_db の作成に失敗"
         fix_dir_permissions "$dest_db"
@@ -606,6 +674,7 @@ copy_data() {
         print_warning "データベースが見つからないよ: $src_db。コピーはスキップ。"
     fi
 
+    # チェーンデータコピー
     if [ -d "$src_data" ]; then
         mkdir -p "$dest_data" || error_exit "$dest_data の作成に失敗"
         fix_dir_permissions "$dest_data"
@@ -646,7 +715,7 @@ setup_shoestring() {
     print_info "shoestring.ini を初期化するよ"
     log "python3 -m shoestring init \"$config_file\" --package $network_type" "DEBUG"
     python3 -m shoestring init "$config_file" --package "$network_type" > "$SHOESTRING_DIR/install_shoestring.log" 2>&1 || error_exit "shoestring.ini の初期化に失敗。手動で確認してね: python3 -m shoestring init $config_file"
-    # --- 修正: shoestring.ini の [node] を更新 ---
+    # --- shoestring.ini の [node] を更新 ---
     print_info "shoestring.ini の [node] を friendly_name とロールで更新するよ"
     cp "$config_file" "$SHOESTRING_DIR/shoestring.ini.pre-node-update-$(date +%Y%m%d_%H%M%S)"
     local friendly_name_escaped=$(printf '%s' "$FRIENDLY_NAME" | sed 's/[.*]/\\&/g')
@@ -674,12 +743,12 @@ setup_shoestring() {
         print_info "Bootstrap に votingkeys が見つかりません: $src_votingkeys。DUAL ノードとして設定します。"
         log "VOTING ロールなし: $src_votingkeys" "INFO"
     fi
-    # --- 修正: features のエスケープ ---
+    # --- features のエスケープ ---
     log "設定する features: $features" "DEBUG"
     local features_escaped=$(printf '%s' "$features" | sed 's/|/\\|/g')
     log "エスケープした features: $features_escaped" "DEBUG"
     sed -i "/^\[node\]/,/^\[.*\]/ s|^features\s*=.*|features = $features_escaped|" "$config_file" || {
-        log "sed エラー: sed -i '/^\\[node\\]/,/^\\[.*\\]/ s|^features\\s*=.*|features = $features_escaped|' $config_file" "ERROR"
+        log "sed エラー: sed -i '/^\\[node\\]/,/^\\[.*\\]/ s|^features\\s\\=.*|features = $features_escaped|' $config_file" "ERROR"
         error_exit "features の設定に失敗しました。ログを確認してください: cat $SHOESTRING_DIR/setup.log"
     }
     grep -A 10 '^\[node\]' "$config_file" > "$SHOESTRING_DIR/node_snippet.log" 2>&1
@@ -825,6 +894,17 @@ EOF
     cd "$shoestring_subdir" || error_exit "ディレクトリ移動に失敗したよ: $shoestring_subdir"
     print_info "Docker の古いリソースをクリアするよ(ネットワーク整理)"
     docker system prune -a --volumes --force >> "$SHOESTRING_DIR/docker_cleanup.log" 2>&1
+    # ポート競合チェック
+    print_info "ポート競合をチェックするよ..."
+    if command -v netstat >/dev/null 2>&1; then
+        netstat -tuln | grep -E ':3000' > "$SHOESTRING_DIR/port_check.log" 2>&1
+        if [ -s "$SHOESTRING_DIR/port_check.log" ]; then
+            log "ポート競合検出: $(cat "$SHOESTRING_DIR/port_check.log")" "ERROR"
+            error_exit "ポート3000が使用中だよ！Bootstrap や他のプロセスを停止してね: cat $SHOESTRING_DIR/port_check.log"
+        fi
+    else
+        print_warning "netstat が見つからないよ。ポート競合チェックをスキップ。"
+    fi
     docker-compose up -d > "$SHOESTRING_DIR/docker_compose.log" 2>&1 || error_exit "Shoestring ノードの起動に失敗。ログを確認してね: cat $SHOESTRING_DIR/docker_compose.log"
     print_info "Shoestring ノードを起動したよ！"
     deactivate
