@@ -39,13 +39,14 @@ else
 fi
 
 # スクリプトバージョン
-SCRIPT_VERSION="2025-06-14-v34"
+SCRIPT_VERSION="2025-06-14-v35"
 
 # グローバル変数
 SHOESTRING_DIR=""
 SHOESTRING_DIR_DEFAULT="$HOME/shoestring"
 BOOTSTRAP_DIR=""
 BOOTSTRAP_DIR_DEFAULT="$HOME/symbol-bootstrap/target"
+BOOTSTRAP_COMPOSE_DIR=""
 BACKUP_DIR=""
 BACKUP_DIR_DEFAULT="$HOME/symbol-bootstrap-backup-$(date +%Y%m%d_%H%M%S)"
 ENCRYPTED=false
@@ -348,13 +349,21 @@ auto_detect_dirs() {
     print_info "ディレクトリを自動で探すよ！"
     local bootstrap_dirs=(
         "$HOME/symbol-bootstrap/target"
+        "$HOME/work/symbol-bootstrap/target"
         "$HOME/symbol-bootstrap"
-        "$(find "$HOME" -maxdepth 3 -type d -name target 2>/dev/null | grep symbol-bootstrap | head -n 1)"
+        "$(find "$HOME" -maxdepth 4 -type d -name target 2>/dev/null | grep symbol-bootstrap | head -n 1)"
     )
     for dir in "${bootstrap_dirs[@]}"; do
-        if [ -d "$dir" ] && [ -f "$dir/addresses.yml" ] && [ -f "$dir/docker-compose.yml" ]; then
+        if [ -d "$dir" ] && [ -f "$dir/addresses.yml" ] && { [ -f "$dir/docker-compose.yml" ] || [ -f "$dir/docker/docker-compose.yml" ]; }; then
             BOOTSTRAP_DIR_DEFAULT="$dir"
             print_info "Bootstrap フォルダを検出: $BOOTSTRAP_DIR_DEFAULT"
+            if [ -f "$dir/docker/docker-compose.yml" ]; then
+                BOOTSTRAP_COMPOSE_DIR="$dir/docker"
+                print_info "docker-compose.yml を検出: $BOOTSTRAP_COMPOSE_DIR/docker-compose.yml"
+            else
+                BOOTSTRAP_COMPOSE_DIR="$dir"
+                print_info "docker-compose.yml を検出: $BOOTSTRAP_COMPOSE_DIR/docker-compose.yml"
+            fi
             break
         fi
     done
@@ -382,6 +391,10 @@ collect_user_info() {
     if $SKIP_CONFIRM; then
         SHOESTRING_DIR="$SHOESTRING_DIR_DEFAULT"
         BOOTSTRAP_DIR="$BOOTSTRAP_DIR_DEFAULT"
+        BOOTSTRAP_COMPOSE_DIR="$BOOTSTRAP_DIR_DEFAULT"
+        if [ -f "$BOOTSTRAP_DIR_DEFAULT/docker/docker-compose.yml" ]; then
+            BOOTSTRAP_COMPOSE_DIR="$BOOTSTRAP_DIR_DEFAULT/docker"
+        fi
         BACKUP_DIR="$BACKUP_DIR_DEFAULT"
     else
         echo -e "${YELLOW}Shoestring ノードのフォルダパスを入力してね:${NC}"
@@ -393,6 +406,13 @@ collect_user_info() {
         echo -e "${YELLOW}デフォルト（Enterで選択）: $BOOTSTRAP_DIR_DEFAULT${NC}"
         read -r input
         BOOTSTRAP_DIR="$(expand_tilde "${input:-$BOOTSTRAP_DIR_DEFAULT}")"
+        if [ -f "$BOOTSTRAP_DIR/docker/docker-compose.yml" ]; then
+            BOOTSTRAP_COMPOSE_DIR="$BOOTSTRAP_DIR/docker"
+            print_info "docker-compose.yml を検出: $BOOTSTRAP_COMPOSE_DIR/docker-compose.yml"
+        else
+            BOOTSTRAP_COMPOSE_DIR="$BOOTSTRAP_DIR"
+            print_info "docker-compose.yml を検出: $BOOTSTRAP_COMPOSE_DIR/docker-compose.yml"
+        fi
         echo -e "${YELLOW}バックアップの保存先フォルダを入力してね:${NC}"
         echo -e "${YELLOW}デフォルト（Enterで選択）: $BACKUP_DIR_DEFAULT${NC}"
         read -r input
@@ -404,7 +424,7 @@ collect_user_info() {
         print_info "$BACKUP_DIR を作成したよ！"
     fi
     print_info "バックアップフォルダ: $BACKUP_DIR"
-    log "SHOESTRING_DIR: $SHOESTRING_DIR, BOOTSTRAP_DIR: $BOOTSTRAP_DIR, BACKUP_DIR: $BACKUP_DIR" "INFO"
+    log "SHOESTRING_DIR: $SHOESTRING_DIR, BOOTSTRAP_DIR: $BOOTSTRAP_DIR, BOOTSTRAP_COMPOSE_DIR: $BOOTSTRAP_COMPOSE_DIR, BACKUP_DIR: $BACKUP_DIR" "INFO"
     if $SKIP_CONFIRM; then
         ENCRYPTED=false
     else
@@ -574,8 +594,14 @@ validate_bootstrap_dir() {
     if [ ! -d "$dir" ]; then
         error_exit "Bootstrap ディレクトリが見つからないよ: $dir。パスを確認してね！"
     fi
-    if [ ! -f "$dir/docker-compose.yml" ]; then
-        error_exit "docker-compose.yml が見つからないよ: $dir/docker-compose.yml。Bootstrap のセットアップを確認してね！"
+    if [ -f "$dir/docker-compose.yml" ]; then
+        BOOTSTRAP_COMPOSE_DIR="$dir"
+        print_info "docker-compose.yml を検出: $BOOTSTRAP_COMPOSE_DIR/docker-compose.yml"
+    elif [ -f "$dir/docker/docker-compose.yml" ]; then
+        BOOTSTRAP_COMPOSE_DIR="$dir/docker"
+        print_info "docker-compose.yml を検出: $BOOTSTRAP_COMPOSE_DIR/docker-compose.yml"
+    else
+        error_exit "docker-compose.yml が見つからないよ: $dir/docker-compose.yml または $dir/docker/docker-compose.yml。Bootstrap のセットアップを確認してね！"
     fi
     if [ ! -d "$dir/databases/db" ] && [ ! -d "$dir/nodes/node/data" ]; then
         error_exit "データディレクトリが見つからないよ: $dir/databases/db または $dir/nodes/node/data。Bootstrap のデータがあるか確認してね！"
@@ -605,9 +631,9 @@ copy_data() {
     log "現在の Docker コンテナ: $(docker ps -a)" "DEBUG"
     
     # Bootstrap ノードの安全停止
-    if [ -d "$BOOTSTRAP_DIR" ]; then
-        print_info "Bootstrap ノードを安全に停止するよ: $BOOTSTRAP_DIR"
-        cd "$BOOTSTRAP_DIR" || error_exit "Bootstrap ディレクトリに移動できないよ: $BOOTSTRAP_DIR"
+    if [ -d "$BOOTSTRAP_COMPOSE_DIR" ]; then
+        print_info "Bootstrap ノードを安全に停止するよ: $BOOTSTRAP_COMPOSE_DIR"
+        cd "$BOOTSTRAP_COMPOSE_DIR" || error_exit "Bootstrap ディレクトリに移動できないよ: $BOOTSTRAP_COMPOSE_DIR"
         if [ -f "docker-compose.yml" ]; then
             print_info "Bootstrap ノードを停止中（最大30秒待つよ）..."
             sudo docker-compose down >>"$SHOESTRING_DIR/data_copy.log" 2>&1 || {
@@ -618,15 +644,15 @@ copy_data() {
             local containers
             containers=$(docker-compose ps -q 2>>"$SHOESTRING_DIR/data_copy.log")
             if [ -n "$containers" ]; then
-                log "残存コンテナ: $(docker ps -a | grep "$BOOTSTRAP_DIR")" "ERROR"
-                error_exit "Bootstrap ノードがまだ動いてるよ！手動で停止してね: cd $BOOTSTRAP_DIR && sudo docker-compose down"
+                log "残存コンテナ: $(docker ps -a | grep "$BOOTSTRAP_COMPOSE_DIR")" "ERROR"
+                error_exit "Bootstrap ノードがまだ動いてるよ！手動で停止してね: cd $BOOTSTRAP_COMPOSE_DIR && sudo docker-compose down"
             fi
             print_info "Bootstrap ノードを安全に停止したよ！"
         else
-            error_exit "docker-compose.yml が見つからないよ: $BOOTSTRAP_DIR/docker-compose.yml"
+            error_exit "docker-compose.yml が見つからないよ: $BOOTSTRAP_COMPOSE_DIR/docker-compose.yml"
         fi
     else
-        error_exit "Bootstrap ディレクトリが見つからないよ: $BOOTSTRAP_DIR"
+        error_exit "Bootstrap ディレクトリが見つからないよ: $BOOTSTRAP_COMPOSE_DIR"
     fi
     
     # Shoestring ノードの停止
@@ -748,7 +774,7 @@ setup_shoestring() {
     local features_escaped=$(printf '%s' "$features" | sed 's/|/\\|/g')
     log "エスケープした features: $features_escaped" "DEBUG"
     sed -i "/^\[node\]/,/^\[.*\]/ s|^features\s*=.*|features = $features_escaped|" "$config_file" || {
-        log "sed エラー: sed -i '/^\\[node\\]/,/^\\[.*\\]/ s|^features\\s\\=.*|features = $features_escaped|' $config_file" "ERROR"
+        log "sed エラー: sed -i '/^\\[node\\]/,/^\\[.*\\]/ s|^features\\s*=.*|features = $features_escaped|' $config_file" "ERROR"
         error_exit "features の設定に失敗しました。ログを確認してください: cat $SHOESTRING_DIR/setup.log"
     }
     grep -A 10 '^\[node\]' "$config_file" > "$SHOESTRING_DIR/node_snippet.log" 2>&1
