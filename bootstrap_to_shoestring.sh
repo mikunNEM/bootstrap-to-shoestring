@@ -692,20 +692,30 @@ copy_data() {
         error_exit "Bootstrap ディレクトリが見つからないよ: $BOOTSTRAP_COMPOSE_DIR"
     fi
     
-    # データベース移動（Shoestringのdbdataは正常なのでスキップ可能）
+    # データベース移動
     if [ -d "$src_db" ]; then
         local db_size_human=$(du -sh "$src_db" | awk '{print $1}')
         print_info "データベース $db_size_human を移動します"
         log "データベースサイズ: $db_size_human" "INFO"
-        mkdir -p "$(dirname "$dest_db")" || error_exit "$dest_db の作成に失敗"
-        fix_dir_permissions "$(dirname "$dest_db")"
-        sudo mv "$src_db" "$dest_db" 2>>"$SHOESTRING_DIR/log/data_copy.log" || error_exit "データベースの移動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
+        mkdir -p "$dest_db" || error_exit "$dest_db の作成に失敗"
+        fix_dir_permissions "$dest_db"
+        # ディレクトリ内容をログに記録
+        ls -lR "$src_db" > "$SHOESTRING_DIR/log/src_db_contents.log" 2>&1
+        log "Bootstrap データベース内容: $(cat "$SHOESTRING_DIR/log/src_db_contents.log")" "DEBUG"
+        # ディレクトリ構造を保持して移動
+        sudo mv "$src_db"/* "$dest_db/" 2>>"$SHOESTRING_DIR/log/data_copy.log" || {
+            log "データベース移動エラー: $(tail -n 20 "$SHOESTRING_DIR/log/data_copy.log")" "ERROR"
+            error_exit "データベースの移動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
+        }
+        sudo rmdir "$src_db" 2>/dev/null || true
+        ls -lR "$dest_db" > "$SHOESTRING_DIR/log/dest_db_contents.log" 2>&1
+        log "Shoestring データベース内容: $(cat "$SHOESTRING_DIR/log/dest_db_contents.log")" "DEBUG"
         print_info "データベースを移動したよ: $dest_db"
     else
         print_warning "データベースが見つからないよ: $src_db。移動はスキップ。"
     fi
     
-    # チェーンデータ移動（ディレクトリ構造を保持）
+    # チェーンデータ移動
     if [ -d "$src_data" ]; then
         local data_size_human=$(du -sh "$src_data" | awk '{print $1}')
         print_info "チェーンデータ $data_size_human を移動します"
@@ -715,7 +725,7 @@ copy_data() {
         # ディレクトリ内容をログに記録
         ls -lR "$src_data" > "$SHOESTRING_DIR/log/src_data_contents.log" 2>&1
         log "Bootstrap データディレクトリ内容: $(cat "$SHOESTRING_DIR/log/src_data_contents.log")" "DEBUG"
-        # ディレクトリとファイルをそのまま移動
+        # ディレクトリ構造を保持して移動
         sudo mv "$src_data"/* "$dest_data/" 2>>"$SHOESTRING_DIR/log/data_copy.log" || {
             log "データ移動エラー: $(tail -n 20 "$SHOESTRING_DIR/log/data_copy.log")" "ERROR"
             error_exit "チェーンデータの移動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
