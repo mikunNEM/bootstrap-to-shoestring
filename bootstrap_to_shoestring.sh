@@ -624,13 +624,22 @@ copy_data() {
     local dest_db="$SHOESTRING_DIR/shoestring/dbdata"
     local dest_data="$SHOESTRING_DIR/shoestring/data"
     
-    print_info "Bootstrap のデータベースとデータをコピーするよ（再同期を回避！）"
+    print_info "Bootstrap のデータベースとデータを移動するよ（再同期を回避！）"
     
     # Bootstrap ディレクトリ検証
     validate_bootstrap_dir "$BOOTSTRAP_DIR"
     
     # ディスク容量チェック
     check_disk_space_for_data "$SHOESTRING_DIR"
+    
+    # 移動の確認
+    if ! $SKIP_CONFIRM; then
+        if confirm "データベースとチェーンデータを移動する？（移動後、元データは $BOOTSTRAP_DIR から消えます。バックアップはスキップします。）"; then
+            print_info "データバックアップをスキップして移動を続行します..."
+        else
+            error_exit "データ移動をキャンセルしました。バックアップなしで進める場合は -y フラグを使用してください。"
+        fi
+    fi
     
     # Bootstrap ノードを停止
     print_info "Bootstrap のノードを安全に停止するよ"
@@ -659,60 +668,30 @@ copy_data() {
         error_exit "Bootstrap ディレクトリが見つからないよ: $BOOTSTRAP_COMPOSE_DIR"
     fi
     
-    # データベースコピー
+    # データベース移動
     if [ -d "$src_db" ]; then
-        # サイズ計算
-        local db_size_bytes=$(du -sb "$src_db" | awk '{print $1}')
         local db_size_human=$(du -sh "$src_db" | awk '{print $1}')
-        print_info "データベース $db_size_human をコピーします"
-        log "データベースサイズ: $db_size_human ($db_size_bytes bytes)" "INFO"
-        
-        mkdir -p "$dest_db" || error_exit "$dest_db の作成に失敗"
-        fix_dir_permissions "$dest_db"
-        if command -v pv >/dev/null 2>&1; then
-            echo -e "${YELLOW}データベースコピー中... sudo のパスワードを入力してね:${NC}"
-            print_info "データベース（db）をコピー中（進捗は画面に表示、詳細は: $SHOESTRING_DIR/log/data_copy.log）"
-            sudo tar -C "$src_db" -cf - . 2>>"$SHOESTRING_DIR/log/data_copy.log" \
-              | pv -s "$db_size_bytes" -pera \
-              | sudo tar -C "$dest_db" -xf - 2>>"$SHOESTRING_DIR/log/data_copy.log" \
-              || error_exit "データベースのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
-            print_info "データベースコピー完了！"
-        else
-            sudo cp -a "$src_db/." "$dest_db/" 2>>"$SHOESTRING_DIR/log/data_copy.log" \
-              || error_exit "データベースコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
-            print_info "データベースコピー完了！（進捗なし）"
-        fi
-        print_info "データベースをコピーしたよ: $dest_db"
+        print_info "データベース $db_size_human を移動します"
+        log "データベースサイズ: $db_size_human" "INFO"
+        mkdir -p "$(dirname "$dest_db")" || error_exit "$dest_db の作成に失敗"
+        fix_dir_permissions "$(dirname "$dest_db")"
+        sudo mv "$src_db" "$dest_db" 2>>"$SHOESTRING_DIR/log/data_copy.log" || error_exit "データベースの移動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
+        print_info "データベースを移動したよ: $dest_db"
     else
-        print_warning "データベースが見つからないよ: $src_db。コピーはスキップ。"
+        print_warning "データベースが見つからないよ: $src_db。移動はスキップ。"
     fi
-
-    # チェーンデータコピー
+    
+    # チェーンデータ移動
     if [ -d "$src_data" ]; then
-        # サイズ計算
-        local data_size_bytes=$(du -sb "$src_data" | awk '{print $1}')
         local data_size_human=$(du -sh "$src_data" | awk '{print $1}')
-        print_info "チェーンデータ $data_size_human をコピーします"
-        log "チェーンデータサイズ: $data_size_human ($data_size_bytes bytes)" "INFO"
-        
-        mkdir -p "$dest_data" || error_exit "$dest_data の作成に失敗"
-        fix_dir_permissions "$dest_data"
-        if command -v pv >/dev/null 2>&1; then
-            echo -e "${YELLOW}チェーンデータコピー中... sudo のパスワードを入力してね:${NC}"
-            print_info "チェーンデータをコピー中（進捗は画面に表示）…"
-            sudo tar -C "$src_data" -cf - . 2>>"$SHOESTRING_DIR/log/data_copy.log" \
-              | pv -s "$data_size_bytes" -pera \
-              | sudo tar -C "$dest_data" -xf - 2>>"$SHOESTRING_DIR/log/data_copy.log" \
-              || error_exit "チェーンデータのコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
-            print_info "チェーンデータコピー完了！"
-        else
-            sudo cp -a "$src_data/." "$dest_data/" 2>>"$SHOESTRING_DIR/log/data_copy.log" \
-              || error_exit "チェーンデータコピーに失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
-            print_info "データコピー完了！（進捗なし）"
-        fi
-        print_info "データをコピーしたよ: $dest_data"
+        print_info "チェーンデータ $data_size_human を移動します"
+        log "チェーンデータサイズ: $data_size_human" "INFO"
+        mkdir -p "$(dirname "$dest_data")" || error_exit "$dest_data の作成に失敗"
+        fix_dir_permissions "$(dirname "$dest_data")"
+        sudo mv "$src_data" "$dest_data" 2>>"$SHOESTRING_DIR/log/data_copy.log" || error_exit "チェーンデータの移動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
+        print_info "チェーンデータを移動したよ: $dest_data"
     else
-        print_warning "データが見つからないよ: $src_data。コピーはスキップ。"
+        print_warning "データが見つからないよ: $src_data。移動はスキップ。"
     fi
 }
 
