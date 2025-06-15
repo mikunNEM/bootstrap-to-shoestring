@@ -388,6 +388,25 @@ auto_detect_dirs() {
 # ユーザー情報の収集
 collect_user_info() {
     print_info "移行に必要な情報を集めるよ！"
+
+    # Bootstrap target ディレクトリの自動検出
+    print_info "Bootstrap の target ディレクトリを自動で探すよ！"
+    local detected_bootstrap_dir=""
+    # target ディレクトリを検索し、addresses.yml が存在するディレクトリを優先
+    while IFS= read -r dir; do
+        if [ -f "$dir/addresses.yml" ] && { [ -f "$dir/docker-compose.yml" ] || [ -f "$dir/docker/docker-compose.yml" ]; }; then
+            detected_bootstrap_dir="$dir"
+            break
+        fi
+    done < <(find "$HOME" -maxdepth 4 -type d -name target 2>/dev/null)
+    
+    if [ -n "$detected_bootstrap_dir" ]; then
+        BOOTSTRAP_DIR_DEFAULT="$detected_bootstrap_dir"
+        print_info "検出した Bootstrap target ディレクトリ: $BOOTSTRAP_DIR_DEFAULT"
+    else
+        print_warning "Bootstrap target ディレクトリを自動検出できなかったよ。デフォルトを使用: $BOOTSTRAP_DIR_DEFAULT"
+    fi
+
     if $SKIP_CONFIRM; then
         SHOESTRING_DIR="$SHOESTRING_DIR_DEFAULT"
         BOOTSTRAP_DIR="$BOOTSTRAP_DIR_DEFAULT"
@@ -402,10 +421,19 @@ collect_user_info() {
         read -r input
         SHOESTRING_DIR="$(expand_tilde "${input:-$SHOESTRING_DIR_DEFAULT}")"
         fix_dir_permissions "$SHOESTRING_DIR"
+        
         echo -e "${YELLOW}Bootstrap の target フォルダパスを入力してね:${NC}"
         echo -e "${YELLOW}デフォルト（Enterで選択）: $BOOTSTRAP_DIR_DEFAULT${NC}"
-        read -r input
-        BOOTSTRAP_DIR="$(expand_tilde "${input:-$BOOTSTRAP_DIR_DEFAULT}")"
+        if [ -n "$detected_bootstrap_dir" ]; then
+            echo -e "${BLUE}検出したパス: $detected_bootstrap_dir${NC}" >&2
+        fi
+        if confirm "このパスでOK？（y/n、デフォルト: y）"; then
+            BOOTSTRAP_DIR="$BOOTSTRAP_DIR_DEFAULT"
+        else
+            echo -e "${YELLOW}正しい target フォルダパスを入力してね:${NC}"
+            read -r input
+            BOOTSTRAP_DIR="$(expand_tilde "${input:-$BOOTSTRAP_DIR_DEFAULT}")"
+        fi
         if [ -f "$BOOTSTRAP_DIR/docker/docker-compose.yml" ]; then
             BOOTSTRAP_COMPOSE_DIR="$BOOTSTRAP_DIR/docker"
             print_info "docker-compose.yml を検出: $BOOTSTRAP_COMPOSE_DIR/docker-compose.yml"
@@ -413,6 +441,7 @@ collect_user_info() {
             BOOTSTRAP_COMPOSE_DIR="$BOOTSTRAP_DIR"
             print_info "docker-compose.yml を検出: $BOOTSTRAP_COMPOSE_DIR/docker-compose.yml"
         fi
+        
         echo -e "${YELLOW}バックアップの保存先フォルダを入力してね:${NC}"
         echo -e "${YELLOW}デフォルト（Enterで選択）: $BACKUP_DIR_DEFAULT${NC}"
         read -r input
