@@ -712,8 +712,8 @@ copy_data() {
         log "チェーンデータサイズ: $data_size_human" "INFO"
         mkdir -p "$dest_data" || error_exit "$dest_data の作成に失敗"
         fix_dir_permissions "$dest_data"
-        # ディレクトリ内容を確認
-        ls -l "$src_data" > "$SHOESTRING_DIR/log/src_data_contents.log" 2>&1
+        # ディレクトリ内容をログに記録
+        ls -lR "$src_data" > "$SHOESTRING_DIR/log/src_data_contents.log" 2>&1
         log "Bootstrap データディレクトリ内容: $(cat "$SHOESTRING_DIR/log/src_data_contents.log")" "DEBUG"
         # ファイルとサブディレクトリをフラットに移動
         find "$src_data" -maxdepth 1 -type f -exec sudo mv {} "$dest_data/" \; 2>>"$SHOESTRING_DIR/log/data_copy.log" || {
@@ -725,6 +725,9 @@ copy_data() {
             error_exit "チェーンデータのディレクトリ移動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
         }
         sudo rmdir "$src_data" 2>/dev/null || true
+        # 移動後の内容をログに記録
+        ls -lR "$dest_data" > "$SHOESTRING_DIR/log/dest_data_contents.log" 2>&1
+        log "Shoestring データディレクトリ内容: $(cat "$SHOESTRING_DIR/log/dest_data_contents.log")" "DEBUG"
         print_info "チェーンデータを移動したよ: $dest_data"
     else
         print_warning "データが見つからないよ: $src_data。移動はスキップ。"
