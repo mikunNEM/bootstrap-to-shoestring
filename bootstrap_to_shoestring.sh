@@ -39,7 +39,7 @@ else
 fi
 
 # スクリプトバージョン
-SCRIPT_VERSION="2025-06-14-v37"
+SCRIPT_VERSION="2025-06-16-v38"
 
 # グローバル変数
 SHOESTRING_DIR=""
@@ -299,6 +299,15 @@ install_dependencies() {
     fi
     local openssl_version=$(openssl version)
     print_info "OpenSSL: $openssl_version"
+
+    # yq（YAMLパーサー、オプション）
+    if ! command -v yq >/dev/null 2>&1; then
+        print_warning "yq が見つからないよ。addresses.yml の正確なパースに使うからインストールするね！"
+        retry_command "sudo apt-get install -y yq" || print_warning "yq のインストールに失敗。簡易パースを使用します。"
+    fi
+    if command -v yq >/dev/null 2>&1; then
+        print_info "yq: $(yq --version)"
+    fi
 
     # 仮想環境作成前のディスク容量チェック
     check_disk_space_for_venv "$SHOESTRING_DIR"
@@ -646,6 +655,76 @@ validate_bootstrap_dir() {
     print_info "Bootstrap ディレクトリ検証OK: $dir"
 }
 
+# beneficiaryAddress を設定
+set_beneficiary_address() {
+    local bootstrap_config="$BOOTSTRAP_DIR/nodes/node/server-config/resources/config-harvesting.properties"
+    local addresses_yml="$BOOTSTRAP_DIR/addresses.yml"
+    local overrides_ini="$SHOESTRING_DIR/shoestring/overrides.ini"
+    local beneficiary_address=""
+
+    print_info "overrides.ini の beneficiaryAddress を設定するよ"
+
+    # 1. config-harvesting.properties から beneficiaryAddress を抽出
+    if [ -f "$bootstrap_config" ]; then
+        beneficiary_address=$(grep -E '^beneficiaryAddress\s*=\s*' "$bootstrap_config" | sed 's/.*=\s*//')
+        if [ -n "$beneficiary_address" ]; then
+            print_info "Bootstrap の config-harvesting.properties から beneficiaryAddress を見つけた: $beneficiary_address"
+        else
+            print_warning "config-harvesting.properties に beneficiaryAddress が設定されていないよ"
+        fi
+    else
+        print_warning "config-harvesting.properties が見つからないよ: $bootstrap_config"
+    fi
+
+    # 2. 見つからない場合、addresses.yml の main.address を抽出
+    if [ -z "$beneficiary_address" ] && [ -f "$addresses_yml" ]; then
+        if command -v yq >/dev/null 2>&1; then
+            beneficiary_address=$(yq e '.main.address' "$addresses_yml")
+            if [ -n "$beneficiary_address" ] && [ "$beneficiary_address" != "null" ]; then
+                print_info "addresses.yml の main.address を使用: $beneficiary_address"
+            else
+                print_warning "addresses.yml に main.address が見つからないよ"
+            fi
+        else
+            print_warning "yq コマンドが見つからないよ。簡易パースを試みる。"
+            beneficiary_address=$(grep -A 2 'main:' "$addresses_yml" | grep 'address:' | sed 's/.*address:\s*//')
+            if [ -n "$beneficiary_address" ]; then
+                print_info "addresses.yml の main.address を使用（簡易パース）: $beneficiary_address"
+            fi
+        fi
+    fi
+
+    # 3. overrides.ini の存在チェックと作成
+    if [ ! -f "$overrides_ini" ]; then
+        print_info "overrides.ini が見つからないので作成するよ: $overrides_ini"
+        echo "[harvesting.harvesting]" | sudo tee "$overrides_ini" >/dev/null
+        echo "maxUnlockedAccounts = 5" | sudo tee -a "$overrides_ini" >/dev/null
+        sudo chown $(whoami):$(whoami) "$overrides_ini"
+        chmod u+rw "$overrides_ini"
+    fi
+
+    # 4. overrides.ini に設定
+    if [ -n "$beneficiary_address" ]; then
+        # [harvesting.harvesting] セクションが存在するか確認
+        if grep -q "\[harvesting.harvesting\]" "$overrides_ini"; then
+            # beneficiaryAddress を更新（または追加）
+            if grep -q "^beneficiaryAddress\s*=" "$overrides_ini"; then
+                sudo sed -i "/\[harvesting.harvesting\]/,/^\[/ s/^beneficiaryAddress\s*=.*/beneficiaryAddress = $beneficiary_address/" "$overrides_ini"
+            else
+                sudo sed -i "/\[harvesting.harvesting\]/a beneficiaryAddress = $beneficiary_address" "$overrides_ini"
+            fi
+        else
+            # セクションが存在しない場合、追加
+            echo -e "\n[harvesting.harvesting]\nmaxUnlockedAccounts = 5\nbeneficiaryAddress = $beneficiary_address" | sudo tee -a "$overrides_ini" >/dev/null
+        fi
+        sudo chown $(whoami):$(whoami) "$overrides_ini"
+        chmod u+rw "$overrides_ini"
+        print_info "overrides.ini に beneficiaryAddress を設定したよ: $beneficiary_address"
+    else
+        print_warning "beneficiaryAddress が見つからなかったよ。overrides.ini は変更せず、デフォルトのまま。"
+    fi
+}
+
 # データコピー
 copy_data() {
     local src_db="$BOOTSTRAP_DIR/databases/db"
@@ -908,22 +987,20 @@ setup_shoestring() {
         mv "$overrides_file" "$overrides_file.bak-$(date +%Y%m%d_%H%M%S)"
         print_info "既存の overrides.ini をバックアップして: $overrides_file.bak-$(date +%Y%m%d_%H%M%S)"
     fi
-cat > "$overrides_file" << EOF
-[user.account]
-enableDelegatedHarvestersAutoDetection = true
-
-[harvesting.harvesting]
-maxUnlockedAccounts =5
-beneficiaryAddress = 
-
-[node.node]
-minFeeMultiplier =100
-
-[node.localnode]
-host = $host_name
-friendlyName = $FRIENDLY_NAME
-EOF
-    log "overrides.ini content: $(cat "$overrides_file" | sed 's/["'']/\\\/g')" "DEBUG"
+    # overrides.ini の初期生成を簡略化し、set_beneficiary_address に委譲
+    echo "[user.account]" | sudo tee "$overrides_file" >/dev/null
+    echo "enableDelegatedHarvestersAutoDetection = true" | sudo tee -a "$overrides_file" >/dev/null
+    echo "" | sudo tee -a "$overrides_file" >/dev/null
+    echo "[node.node]" | sudo tee -a "$overrides_file" >/dev/null
+    echo "minFeeMultiplier = 100" | sudo tee -a "$overrides_file" >/dev/null
+    echo "" | sudo tee -a "$overrides_file" >/dev/null
+    echo "[node.localnode]" | sudo tee -a "$overrides_file" >/dev/null
+    echo "host = $host_name" | sudo tee -a "$overrides_file" >/dev/null
+    echo "friendlyName = $FRIENDLY_NAME" | sudo tee -a "$overrides_file" >/dev/null
+    sudo chown $(whoami):$(whoami) "$overrides_file"
+    chmod u+rw "$overrides_file"
+    # beneficiaryAddress を動的に設定
+    set_beneficiary_address
     validate_ini "$overrides_file"
     if ! $SKIP_CONFIRM; then
         confirm_and_edit_ini "$overrides_file"
