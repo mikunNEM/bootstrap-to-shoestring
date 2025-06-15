@@ -427,7 +427,7 @@ collect_user_info() {
         if [ -n "$detected_bootstrap_dir" ]; then
             echo -e "${BLUE}検出したパス: $detected_bootstrap_dir${NC}" >&2
         fi
-        if confirm "このパスでOK？（y/n、デフォルト: y）"; then
+        if confirm "このパスでOK？"; then
             BOOTSTRAP_DIR="$BOOTSTRAP_DIR_DEFAULT"
         else
             echo -e "${YELLOW}正しい target フォルダパスを入力してね:${NC}"
