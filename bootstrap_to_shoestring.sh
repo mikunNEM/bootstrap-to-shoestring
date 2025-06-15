@@ -655,13 +655,9 @@ copy_data() {
     
     print_info "Bootstrap のデータベースとデータを移動するよ（再同期を回避！）"
     
-    # Bootstrap ディレクトリ検証
     validate_bootstrap_dir "$BOOTSTRAP_DIR"
-    
-    # ディスク容量チェック
     check_disk_space_for_data "$SHOESTRING_DIR"
     
-    # 移動の確認
     if ! $SKIP_CONFIRM; then
         if confirm "データベースとチェーンデータを移動する？（移動後、元データは $BOOTSTRAP_DIR から消えます。バックアップはスキップします。）"; then
             print_info "データバックアップをスキップして移動を続行します..."
@@ -670,7 +666,6 @@ copy_data() {
         fi
     fi
     
-    # Bootstrap ノードを停止
     print_info "Bootstrap のノードを安全に停止するよ"
     log "現在の Docker コンテナ: $(docker ps -a)" "DEBUG"
     
@@ -710,14 +705,17 @@ copy_data() {
         print_warning "データベースが見つからないよ: $src_db。移動はスキップ。"
     fi
     
-    # チェーンデータ移動
+    # チェーンデータ移動（サブディレクトリをフラットに）
     if [ -d "$src_data" ]; then
         local data_size_human=$(du -sh "$src_data" | awk '{print $1}')
         print_info "チェーンデータ $data_size_human を移動します"
         log "チェーンデータサイズ: $data_size_human" "INFO"
-        mkdir -p "$(dirname "$dest_data")" || error_exit "$dest_data の作成に失敗"
-        fix_dir_permissions "$(dirname "$dest_data")"
-        sudo mv "$src_data" "$dest_data" 2>>"$SHOESTRING_DIR/log/data_copy.log" || error_exit "チェーンデータの移動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
+        mkdir -p "$dest_data" || error_exit "$dest_data の作成に失敗"
+        fix_dir_permissions "$dest_data"
+        # サブディレクトリとファイルをフラットに移動
+        find "$src_data" -maxdepth 1 -type f -exec sudo mv {} "$dest_data/" \; 2>>"$SHOESTRING_DIR/log/data_copy.log"
+        find "$src_data" -maxdepth 1 -type d -not -path "$src_data" -exec sudo mv {}/\* "$dest_data/" \; 2>>"$SHOESTRING_DIR/log/data_copy.log"
+        sudo rmdir "$src_data" 2>/dev/null || true
         print_info "チェーンデータを移動したよ: $dest_data"
     else
         print_warning "データが見つからないよ: $src_data。移動はスキップ。"
