@@ -5,13 +5,13 @@
 ## **このスクリプトでできること**
 - Symbol Bootstrap のノードデータを **Shoestring** に移行。
 - 既存のブロックデータをコピーして、同期時間を短縮。
-- 必要なツール（Docker、Python、Node.js など）を自動インストール。
+- 必要なツール（Docker、Pythonなど）を自動インストール。
 - 重要なデータ（秘密鍵、設定ファイル）を安全にバックアップ。
 - **初心者向け**のわかりやすいメッセージとエラー対処ガイド。
 
 ## **こんな人にオススメ**
 - Symbol ノードを動かしてるけど、Shoestring に移行したい！
-- サーバー操作、コマンドを極力打ちたくない。
+- サーバーの操作で、極力コマンドを打ちたくない。
 - データの安全性を守りつつ、簡単に移行したい。
 
 ## **前提条件**
@@ -29,8 +29,8 @@
      chmod --version
      ```
 3. **サーバー環境**：
-   - Ubuntu（22.04 以上推奨）。
-   - ディスク：120GB 以上（データコピー用）。
+   - Ubuntu（22.04 以上推奨）
+   - ディスク：120GB 以上（データコピー用）
    - メモリ：4GB 以上。
    - 確認：
      ```bash
@@ -67,7 +67,7 @@
 - **10〜30分**：データサイズ（例：4GB + 24GB）やサーバー性能による。
 
 ## **準備：addresses.yml を平文に変換**
-⚠️ **スクリプト実行前に、`addresses.yml` を必ず平文にしてください！** 暗号化されたままでは、**`crypto-js` のバージョン不一致**で復元に失敗するリスクがあります。以下の手順で変換してね！
+⚠️ **スクリプト実行前に、`addresses.yml` を必ず平文にしてください！** 暗号化されたままでは、**`crypto-js` のバージョン不一致**で復元に失敗する可能性があります。以下の手順で変換してね！
 
 1. **暗号化確認**：
    ```bash
@@ -83,16 +83,8 @@
        privateKey: ABCDEF...
      ```
    - 平文なら「ステップ 1」へ！
-2. **symbol-bootstrap 確認**：
-   - Bootstrap の CLI ツールが必要。
-   - 確認：
-     ```bash
-     symbol-bootstrap --version
-     # 例: 1.2.3
-     # なければインストール
-     sudo npm install -g symbol-bootstrap
-     ```
-3. **平文に変換**：
+ 
+2. **平文に変換**：
    - 暗号化パスワードを準備（忘れた場合は「エラー対処」参照）。
    - **コマンド**：
      ```bash
@@ -107,7 +99,7 @@
      head -n 5 d_addresses.yml
      # mainAccount: ... なら OK
      ```
-4. **元のファイルを置き換え**：
+3. **元のファイルを置き換え**：
    - バックアップ：
      ```bash
      cp addresses.yml addresses.yml.encrypted-backup
@@ -116,7 +108,7 @@
      ```bash
      mv d_addresses.yml addresses.yml
      ```
-5. **権限設定**（セキュリティ）：
+4. **権限設定**（セキュリティ）：
    ```bash
    chmod 600 addresses.yml
    ls -l addresses.yml
@@ -126,7 +118,6 @@
 **注意**：
 - 平文の `addresses.yml` には秘密鍵が含まれる。**他の人に公開しない**！
 - バックアップ（`addresses.yml.encrypted-backup`）を安全な場所に。
-- パスワード忘れは「エラー対処」を参照。
 
 ## **手順**
 
@@ -196,9 +187,11 @@ chmod +x bootstrap_to_shoestring.sh utils.sh
      - **暗号化のままは NG！** 準備手順で平文にしてください。
    - **設定ファイル確認**：
      - `shoestring.ini`, `overrides.ini` が表示。
-     - 「y」で進む。編集なら「n」で `nano` 編集。
+     -  編集をするなら 別のターミナルを開いて `nano` で編集
+     - 「n」で更新を確認
+     - 「y」で進む
 3. **進捗**：
-   - データコピー（例：4GB データベース、24GB チェーンデータ）の進捗バー：
+   - データコピー（テストネット 例：4GB データベース、24GB チェーンデータ）の進捗バー：
      ```
      ℹ️ チェーンデータ 23.6GiB をコピーします
      12.4GiB [=====>     ] 52% ETA 0:02:30 78.7MiB/s
@@ -207,11 +200,10 @@ chmod +x bootstrap_to_shoestring.sh utils.sh
 
 ## **重要なポイント**
 - **データ安全性**：
-  - ブロックデータはコピーされ、Bootstrap 元データは残る。
+  - ブロックデータは Shoestring にコピーされ、Bootstrap 元データは残る。
+  - Shoestring の安定稼働を確認後、Bootstrapのブロックデータは削除可
   - 重要ファイル（`addresses.yml`, `node.key.pem`, `config-harvesting.properties`, `votingkeys`）はバックアップ。
   - 平文 `addresses.yml` は権限（`chmod 600`）で保護。
-- **サーバー容量**：
-  - ブロックデータバックアップなし（Bootstrap が代わり）。
-  - 必要容量：データサイズ（例：28GB）＋10GB。
+
 - **ログ**：
   - `/home/mikun/shoestring/log/` に整理（`data_copy.log`, `docker_compose.log`）。
