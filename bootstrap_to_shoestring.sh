@@ -692,7 +692,7 @@ copy_data() {
         error_exit "Bootstrap ディレクトリが見つからないよ: $BOOTSTRAP_COMPOSE_DIR"
     fi
     
-    # データベース移動
+    # データベース移動（Shoestringのdbdataは正常なのでスキップ可能）
     if [ -d "$src_db" ]; then
         local db_size_human=$(du -sh "$src_db" | awk '{print $1}')
         print_info "データベース $db_size_human を移動します"
@@ -705,7 +705,7 @@ copy_data() {
         print_warning "データベースが見つからないよ: $src_db。移動はスキップ。"
     fi
     
-    # チェーンデータ移動（サブディレクトリをフラットに）
+    # チェーンデータ移動（ディレクトリ構造を保持）
     if [ -d "$src_data" ]; then
         local data_size_human=$(du -sh "$src_data" | awk '{print $1}')
         print_info "チェーンデータ $data_size_human を移動します"
@@ -715,14 +715,10 @@ copy_data() {
         # ディレクトリ内容をログに記録
         ls -lR "$src_data" > "$SHOESTRING_DIR/log/src_data_contents.log" 2>&1
         log "Bootstrap データディレクトリ内容: $(cat "$SHOESTRING_DIR/log/src_data_contents.log")" "DEBUG"
-        # ファイルとサブディレクトリをフラットに移動
-        find "$src_data" -maxdepth 1 -type f -exec sudo mv {} "$dest_data/" \; 2>>"$SHOESTRING_DIR/log/data_copy.log" || {
-            log "ファイル移動エラー: $(tail -n 20 "$SHOESTRING_DIR/log/data_copy.log")" "ERROR"
-            error_exit "チェーンデータのファイル移動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
-        }
-        find "$src_data" -maxdepth 1 -type d -not -path "$src_data" -exec sh -c 'if ls "{}"/* >/dev/null 2>&1; then sudo mv "{}"/* "$1/"; fi' sh "$dest_data" \; 2>>"$SHOESTRING_DIR/log/data_copy.log" || {
-            log "ディレクトリ移動エラー: $(tail -n 20 "$SHOESTRING_DIR/log/data_copy.log")" "ERROR"
-            error_exit "チェーンデータのディレクトリ移動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
+        # ディレクトリとファイルをそのまま移動
+        sudo mv "$src_data"/* "$dest_data/" 2>>"$SHOESTRING_DIR/log/data_copy.log" || {
+            log "データ移動エラー: $(tail -n 20 "$SHOESTRING_DIR/log/data_copy.log")" "ERROR"
+            error_exit "チェーンデータの移動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
         }
         sudo rmdir "$src_data" 2>/dev/null || true
         # 移動後の内容をログに記録
