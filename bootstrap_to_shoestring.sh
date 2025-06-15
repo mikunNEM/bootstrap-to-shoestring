@@ -712,9 +712,15 @@ copy_data() {
         log "チェーンデータサイズ: $data_size_human" "INFO"
         mkdir -p "$dest_data" || error_exit "$dest_data の作成に失敗"
         fix_dir_permissions "$dest_data"
-        # サブディレクトリとファイルをフラットに移動
-        find "$src_data" -maxdepth 1 -type f -exec sudo mv {} "$dest_data/" \; 2>>"$SHOESTRING_DIR/log/data_copy.log"
-        find "$src_data" -maxdepth 1 -type d -not -path "$src_data" -exec sudo mv {}/\* "$dest_data/" \; 2>>"$SHOESTRING_DIR/log/data_copy.log"
+        # ファイルとサブディレクトリの内容をフラットに移動
+        find "$src_data" -maxdepth 1 -type f -exec sudo mv {} "$dest_data/" \; 2>>"$SHOESTRING_DIR/log/data_copy.log" || {
+            log "ファイル移動エラー: $(tail -n 20 "$SHOESTRING_DIR/log/data_copy.log")" "ERROR"
+            error_exit "チェーンデータのファイル移動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
+        }
+        find "$src_data" -maxdepth 1 -type d -not -path "$src_data" -exec sudo mv {}/\* "$dest_data/" \; 2>>"$SHOESTRING_DIR/log/data_copy.log" || {
+            log "ディレクトリ移動エラー: $(tail -n 20 "$SHOESTRING_DIR/log/data_copy.log")" "ERROR"
+            error_exit "チェーンデータのディレクトリ移動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
+        }
         sudo rmdir "$src_data" 2>/dev/null || true
         print_info "チェーンデータを移動したよ: $dest_data"
     else
