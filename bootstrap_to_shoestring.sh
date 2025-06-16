@@ -780,8 +780,8 @@ copy_data() {
         mkdir -p "$dest_db" || error_exit "$dest_db の作成に失敗"
         fix_dir_permissions "$dest_db"
         # ディレクトリ内容をログに記録
-        ls -lR "$src_db" > "$SHOESTRING_DIR/log/src_db_contents.log" 2>&1
-        log "Bootstrap データベース内容: $(cat "$SHOESTRING_DIR/log/src_db_contents.log")" "DEBUG"
+        #ls -lR "$src_db" > "$SHOESTRING_DIR/log/src_db_contents.log" 2>&1
+        #log "Bootstrap データベース内容: $(cat "$SHOESTRING_DIR/log/src_db_contents.log")" "DEBUG"
         # ディレクトリ構造を保持して移動
         sudo mv "$src_db"/* "$dest_db/" 2>>"$SHOESTRING_DIR/log/data_copy.log" || {
             log "データベース移動エラー: $(tail -n 20 "$SHOESTRING_DIR/log/data_copy.log")" "ERROR"
@@ -803,8 +803,8 @@ copy_data() {
         mkdir -p "$dest_data" || error_exit "$dest_data の作成に失敗"
         fix_dir_permissions "$dest_data"
         # ディレクトリ内容をログに記録
-        ls -lR "$src_data" > "$SHOESTRING_DIR/log/src_data_contents.log" 2>&1
-        log "Bootstrap データディレクトリ内容: $(cat "$SHOESTRING_DIR/log/src_data_contents.log")" "DEBUG"
+        #ls -lR "$src_data" > "$SHOESTRING_DIR/log/src_data_contents.log" 2>&1
+        #log "Bootstrap データディレクトリ内容: $(cat "$SHOESTRING_DIR/log/src_data_contents.log")" "DEBUG"
         # ディレクトリ構造を保持して移動
         sudo mv "$src_data"/* "$dest_data/" 2>>"$SHOESTRING_DIR/log/data_copy.log" || {
             log "データ移動エラー: $(tail -n 20 "$SHOESTRING_DIR/log/data_copy.log")" "ERROR"
@@ -812,8 +812,8 @@ copy_data() {
         }
         sudo rmdir "$src_data" 2>/dev/null || true
         # 移動後の内容をログに記録
-        ls -lR "$dest_data" > "$SHOESTRING_DIR/log/dest_data_contents.log" 2>&1
-        log "Shoestring データディレクトリ内容: $(cat "$SHOESTRING_DIR/log/dest_data_contents.log")" "DEBUG"
+        #ls -lR "$dest_data" > "$SHOESTRING_DIR/log/dest_data_contents.log" 2>&1
+        #log "Shoestring データディレクトリ内容: $(cat "$SHOESTRING_DIR/log/dest_data_contents.log")" "DEBUG"
         print_info "チェーンデータを移動したよ: $dest_data"
     else
         print_warning "データが見つからないよ: $src_data。移動はスキップ。"
