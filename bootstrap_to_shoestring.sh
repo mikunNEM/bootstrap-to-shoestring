@@ -748,7 +748,7 @@ copy_data() {
         print_info "Bootstrap ノードを安全に停止するよ: $BOOTSTRAP_COMPOSE_DIR"
         cd "$BOOTSTRAP_COMPOSE_DIR" || error_exit "Bootstrap ディレクトリに移動できないよ: $BOOTSTRAP_COMPOSE_DIR"
         if [ -f "docker-compose.yml" ]; then
-            print_info "Bootstrap ノードを停止中（最大30秒待つよ）..."
+            print_info "Bootstrap ノードを停止中（停止が完了するまでに時間が掛かる事もあるから気長に待ってね）..."
             sudo docker-compose down >>"$SHOESTRING_DIR/log/data_copy.log" 2>&1 || {
                 log "Bootstrap 停止エラー: $(tail -n 20 "$SHOESTRING_DIR/log/data_copy.log")" "ERROR"
                 error_exit "Bootstrap のノード停止に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
@@ -1043,7 +1043,7 @@ setup_shoestring() {
             error_exit "ポート3000が使用中だよ！Bootstrap や他のプロセスを停止してね: cat $SHOESTRING_DIR/log/port_check.log"
         fi
     else
-        print_warning "netstat が見つからないよ。ポート競合チェックをスキップ。"
+        print_warning "netstat が見つからないよ。ポート競合チェックをスキップ。 ノードを起動するよ。しばらく待ってね..."
     fi
     docker-compose up -d > "$SHOESTRING_DIR/log/docker_compose.log" 2>&1 || error_exit "Shoestring ノードの起動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/docker_compose.log"
     print_info "Shoestring ノードを起動したよ！"
@@ -1073,7 +1073,7 @@ show_post_migration_guide() {
     echo "  - データ: $SHOESTRING_DIR/shoestring/data"
     echo
     if [ "$NODE_KEY_FOUND" = true ]; then
-        print_warning "node.key.pem, config-harvesting.properties, votingkeys は安全な場所にバックアップして保管してね！"
+        print_warning "node.key.pem, ca.key.pem, config-harvesting.properties, votingkeys は安全な場所にバックアップして保管してね！"
     else
         print_warning "ca.key.pem, config-harvesting.properties, votingkeys は安全な場所にバックアップして保管してね！"
     fi
