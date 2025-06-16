@@ -889,34 +889,56 @@ setup_shoestring() {
         cp "$config_file" "$SHOESTRING_DIR/log/shoestring.ini.pre-import-$(date +%Y%m%d_%H%M%S)"
         log "python3 -m shoestring import-bootstrap --config \"$config_file\" --bootstrap \"$BOOTSTRAP_DIR\" --include-node-key" "DEBUG"
         python3 -m shoestring import-bootstrap --config "$config_file" --bootstrap "$BOOTSTRAP_DIR" --include-node-key > "$SHOESTRING_DIR/log/import_bootstrap.log" 2>&1 || error_exit "import-bootstrap に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/import_bootstrap.log"
-        if [ ! -f "$ca_key_path" ]; then
-            print_info "新しい ca.key.pem を生成するよ"
-            log "新しい ca.key.pem を生成するよ" "INFO"
-            local private_key=$(openssl rand -hex 32)
-            if [ -z "$private_key" ]; then
-                error_exit "プライベートキーの生成に失敗したよ。OpenSSLを確認してね: openssl rand -hex 32"
+        # ca.key.pem 生成（main.privateKey を使用）
+        print_info "Bootstrap の main.privateKey を使用して ca.key.pem を生成するよ"
+        local main_private_key
+        if command -v yq >/dev/null 2>&1; then
+            main_private_key=$(yq e '.main.privateKey' "$BOOTSTRAP_DIR/addresses.yml" 2>>"$SHOESTRING_DIR/log/pemtool.log")
+            if [ -z "$main_private_key" ] || [ "$main_private_key" = "null" ]; then
+                print_warning "yq で main.privateKey の抽出に失敗。grep を試みます..."
+                main_private_key=$(grep -A 2 'main:' "$BOOTSTRAP_DIR/addresses.yml" | grep 'privateKey:' | sed 's/.*privateKey:\s*//')
             fi
-            local temp_key_file=$(mktemp)
-            echo "$private_key" > "$temp_key_file"
-            log "プライベートキー（最初の12文字）: ${private_key:0:12}..." "DEBUG"
-            python3 -m shoestring pemtool --input "$temp_key_file" --output "$ca_key_path" >> "$SHOESTRING_DIR/log/pemtool.log" 2>&1 || error_exit "ca.key.pem の生成に失敗したよ。ログを確認してね: cat $SHOESTRING_DIR/log/pemtool.log"
-            rm -f "$temp_key_file"
-            print_info "ca.key.pem を生成: $ca_key_path"
         else
-            print_info "既存の ca.key.pem を使用: $ca_key_path"
-            log "既存の ca.key.pem 検出: $ca_key_path" "DEBUG"
+            print_warning "yq が見つからないよ。grep で main.privateKey を抽出します..."
+            main_private_key=$(grep -A 2 'main:' "$BOOTSTRAP_DIR/addresses.yml" | grep 'privateKey:' | sed 's/.*privateKey:\s*//')
         fi
-    else
-        print_info "新しい ca.key.pem を生成するよ"
-        log "新しい ca.key.pem を生成するよ" "INFO"
-        local private_key=$(openssl rand -hex 32)
-        if [ -z "$private_key" ]; then
-            error_exit "プライベートキーの生成に失敗したよ。OpenSSLを確認してね: openssl rand -hex 32"
+        if [ -z "$main_private_key" ]; then
+            error_exit "main.privateKey の抽出に失敗しました。addresses.yml を確認してください: cat $BOOTSTRAP_DIR/addresses.yml"
         fi
+        log "main.privateKey（最初の12文字）: ${main_private_key:0:12}..." "DEBUG"
         local temp_key_file=$(mktemp)
-        echo "$private_key" > "$temp_key_file"
-        log "プライベートキー（最初の12文字）: ${private_key:0:12}..." "DEBUG"
-        python3 -m shoestring pemtool --input "$temp_key_file" --output "$ca_key_path" >> "$SHOESTRING_DIR/log/pemtool.log" 2>&1 || error_exit "ca.key.pem の生成に失敗したよ。ログを確認してね: cat $SHOESTRING_DIR/log/pemtool.log"
+        echo "$main_private_key" > "$temp_key_file"
+        python3 -m shoestring pemtool --input "$temp_key_file" --output "$ca_key_path" --ask-pass >> "$SHOESTRING_DIR/log/pemtool.log" 2>&1 || {
+            log "pemtool エラー: $(tail -n 20 "$SHOESTRING_DIR/log/pemtool.log")" "ERROR"
+            rm -f "$temp_key_file"
+            error_exit "ca.key.pem の生成に失敗しました。ログを確認してください: cat $SHOESTRING_DIR/log/pemtool.log"
+        }
+        rm -f "$temp_key_file"
+        print_info "ca.key.pem を生成: $ca_key_path"
+    else
+        print_info "node.key.pem が見つからないため、新しい ca.key.pem を生成するよ"
+        local main_private_key
+        if command -v yq >/dev/null 2>&1; then
+            main_private_key=$(yq e '.main.privateKey' "$BOOTSTRAP_DIR/addresses.yml" 2>>"$SHOESTRING_DIR/log/pemtool.log")
+            if [ -z "$main_private_key" ] || [ "$main_private_key" = "null" ]; then
+                print_warning "yq で main.privateKey の抽出に失敗。grep を試みます..."
+                main_private_key=$(grep -A 2 'main:' "$BOOTSTRAP_DIR/addresses.yml" | grep 'privateKey:' | sed 's/.*privateKey:\s*//')
+            fi
+        else
+            print_warning "yq が見つからないよ。grep で main.privateKey を抽出します..."
+            main_private_key=$(grep -A 2 'main:' "$BOOTSTRAP_DIR/addresses.yml" | grep 'privateKey:' | sed 's/.*privateKey:\s*//')
+        fi
+        if [ -z "$main_private_key" ]; then
+            error_exit "main.privateKey の抽出に失敗しました。addresses.yml を確認してください: cat $BOOTSTRAP_DIR/addresses.yml"
+        fi
+        log "main.privateKey（最初の12文字）: ${main_private_key:0:12}..." "DEBUG"
+        local temp_key_file=$(mktemp)
+        echo "$main_private_key" > "$temp_key_file"
+        python3 -m shoestring pemtool --input "$temp_key_file" --output "$ca_key_path" --ask-pass >> "$SHOESTRING_DIR/log/pemtool.log" 2>&1 || {
+            log "pemtool エラー: $(tail -n 20 "$SHOESTRING_DIR/log/pemtool.log")" "ERROR"
+            rm -f "$temp_key_file"
+            error_exit "ca.key.pem の生成に失敗しました。ログを確認してください: cat $SHOESTRING_DIR/log/pemtool.log"
+        }
         rm -f "$temp_key_file"
         print_info "ca.key.pem を生成: $ca_key_path"
         cp "$config_file" "$SHOESTRING_DIR/log/shoestring.ini.pre-import-$(date +%Y%m%d_%H%M%S)"
@@ -1025,8 +1047,13 @@ setup_shoestring() {
     else
         print_warning "netstat が見つからないよ。ポート競合チェックをスキップ。"
     fi
-    docker-compose up -d > "$SHOESTRING_DIR/log/docker_compose.log" 2>&1 || error_exit "Shoestring ノードの起動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/docker_compose.log"
-    print_info "Shoestring ノードを起動したよ！"
+    print_info "Shoestring ノードを起動準備中..."
+    # docker-compose up の進捗をフィルタリングして表示
+    sudo docker-compose up -d 2>&1 | tee -a "$SHOESTRING_DIR/log/docker_compose.log" | grep -E "Pulling|Building|Creating|Starting|Started" || {
+        log "Docker Compose 起動エラー: $(tail -n 20 "$SHOESTRING_DIR/log/docker_compose.log")" "ERROR"
+        error_exit "Shoestring ノードの起動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/docker_compose.log"
+    }
+    print_success "Shoestring ノードを起動したよ！"
     deactivate
 }
 
