@@ -122,7 +122,7 @@ confirm() {
     local response
 
     while true; do
-        echo -e "${YELLOW}$question（y/n、デフォルト: y）: ${NC}"
+        echo -e "${YELLOW}$question（y/n）: ${NC}"
         read -r response
         if [ -z "$response" ]; then
             return 0
