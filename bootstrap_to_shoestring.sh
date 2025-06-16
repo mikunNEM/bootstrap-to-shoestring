@@ -302,7 +302,7 @@ install_dependencies() {
     print_info "OpenSSL: $openssl_version"
 
     # yq（YAMLパーサー、オプション）
-　　if ! command -v yq >/dev/null 2>&1; then
+    if ! command -v yq >/dev/null 2>&1; then
         print_warning "yq が見つからないよ。addresses.yml の正確なパースに使うからインストールするね！"
         if ! command -v snap >/dev/null 2>&1; then
             print_info "snapd をインストールするよ..."
