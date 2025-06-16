@@ -890,7 +890,7 @@ setup_shoestring() {
         cp "$config_file" "$SHOESTRING_DIR/log/shoestring.ini.pre-import-$(date +%Y%m%d_%H%M%S)"
         log "python3 -m shoestring import-bootstrap --config \"$config_file\" --bootstrap \"$BOOTSTRAP_DIR\" --include-node-key" "DEBUG"
         python3 -m shoestring import-bootstrap --config "$config_file" --bootstrap "$BOOTSTRAP_DIR" --include-node-key > "$SHOESTRING_DIR/log/import_bootstrap.log" 2>&1 || error_exit "import-bootstrap に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/import_bootstrap.log"
-        # ca.key.pem 生成（main.privateKey を使用）
+        # ca.key.pem 生成（main.privateKey を使用、パスフレーズなし）
         print_info "Bootstrap の main.privateKey を使用して ca.key.pem を生成するよ"
         local main_private_key
         if command -v yq >/dev/null 2>&1; then
@@ -909,13 +909,14 @@ setup_shoestring() {
         log "main.privateKey（最初の12文字）: ${main_private_key:0:12}..." "DEBUG"
         local temp_key_file=$(mktemp)
         echo "$main_private_key" > "$temp_key_file"
-        python3 -m shoestring pemtool --input "$temp_key_file" --output "$ca_key_path" --ask-pass >> "$SHOESTRING_DIR/log/pemtool.log" 2>&1 || {
+        python3 -m shoestring pemtool --input "$temp_key_file" --output "$ca_key_path" >> "$SHOESTRING_DIR/log/pemtool.log" 2>&1 || {
             log "pemtool エラー: $(tail -n 20 "$SHOESTRING_DIR/log/pemtool.log")" "ERROR"
             rm -f "$temp_key_file"
             error_exit "ca.key.pem の生成に失敗しました。ログを確認してください: cat $SHOESTRING_DIR/log/pemtool.log"
         }
         rm -f "$temp_key_file"
-        print_info "ca.key.pem を生成: $ca_key_path"
+        chmod 600 "$ca_key_path" || error_exit "ca.key.pem の権限設定に失敗: chmod 600 $ca_key_path"
+        print_info "ca.key.pem を生成（パスフレーズなし）: $ca_key_path"
     else
         print_info "node.key.pem が見つからないため、新しい ca.key.pem を生成するよ"
         local main_private_key
@@ -935,13 +936,14 @@ setup_shoestring() {
         log "main.privateKey（最初の12文字）: ${main_private_key:0:12}..." "DEBUG"
         local temp_key_file=$(mktemp)
         echo "$main_private_key" > "$temp_key_file"
-        python3 -m shoestring pemtool --input "$temp_key_file" --output "$ca_key_path" --ask-pass >> "$SHOESTRING_DIR/log/pemtool.log" 2>&1 || {
+        python3 -m shoestring pemtool --input "$temp_key_file" --output "$ca_key_path" >> "$SHOESTRING_DIR/log/pemtool.log" 2>&1 || {
             log "pemtool エラー: $(tail -n 20 "$SHOESTRING_DIR/log/pemtool.log")" "ERROR"
             rm -f "$temp_key_file"
             error_exit "ca.key.pem の生成に失敗しました。ログを確認してください: cat $SHOESTRING_DIR/log/pemtool.log"
         }
         rm -f "$temp_key_file"
-        print_info "ca.key.pem を生成: $ca_key_path"
+        chmod 600 "$ca_key_path" || error_exit "ca.key.pem の権限設定に失敗: chmod 600 $ca_key_path"
+        print_info "ca.key.pem を生成（パスフレーズなし）: $ca_key_path"
         cp "$config_file" "$SHOESTRING_DIR/log/shoestring.ini.pre-import-$(date +%Y%m%d_%H%M%S)"
         log "python3 -m shoestring import-bootstrap --config \"$config_file\" --bootstrap \"$BOOTSTRAP_DIR\"" "DEBUG"
         python3 -m shoestring import-bootstrap --config "$config_file" --bootstrap "$BOOTSTRAP_DIR" > "$SHOESTRING_DIR/log/import_bootstrap.log" 2>&1 || error_exit "import-bootstrap に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/import_bootstrap.log"
@@ -1048,13 +1050,8 @@ setup_shoestring() {
     else
         print_warning "netstat が見つからないよ。ポート競合チェックをスキップ。"
     fi
-    print_info "Shoestring ノードを起動準備中..."
-    # docker-compose up の進捗をフィルタリングして表示
-    sudo docker-compose up -d 2>&1 | tee -a "$SHOESTRING_DIR/log/docker_compose.log" | grep -E "Pulling|Building|Creating|Starting|Started" || {
-        log "Docker Compose 起動エラー: $(tail -n 20 "$SHOESTRING_DIR/log/docker_compose.log")" "ERROR"
-        error_exit "Shoestring ノードの起動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/docker_compose.log"
-    }
-    print_success "Shoestring ノードを起動したよ！"
+    docker-compose up -d > "$SHOESTRING_DIR/log/docker_compose.log" 2>&1 || error_exit "Shoestring ノードの起動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/docker_compose.log"
+    print_info "Shoestring ノードを起動したよ！"
     deactivate
 }
 
