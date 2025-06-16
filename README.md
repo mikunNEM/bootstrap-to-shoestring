@@ -1,5 +1,3 @@
-# 無題
-
 # Symbol Bootstrap から Shoestring への移行マニュアル
 
 ようこそ！このマニュアルは、**Symbol ノード**を **Symbol Bootstrap** から **Shoestring** に簡単に移行するためのガイドです。スクリプトは初心者でも使いやすく、依存ツールの自動インストールやエラーログを提供します。
