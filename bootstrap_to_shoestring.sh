@@ -302,8 +302,14 @@ install_dependencies() {
     print_info "OpenSSL: $openssl_version"
 
     # yq（YAMLパーサー、オプション）
-    if ! command -v yq >/dev/null 2>&1; then
+　　if ! command -v yq >/dev/null 2>&1; then
         print_warning "yq が見つからないよ。addresses.yml の正確なパースに使うからインストールするね！"
+        if ! command -v snap >/dev/null 2>&1; then
+            print_info "snapd をインストールするよ..."
+            retry_command "sudo apt-get update" || error_exit "APTリポジトリの更新に失敗: sudo apt-get update"
+            retry_command "sudo apt-get install -y snapd" || error_exit "snapd のインストールに失敗: sudo apt-get install snapd"
+            sudo systemctl enable --now snapd.socket || error_exit "snapd サービスの有効化に失敗"
+        fi
         retry_command "sudo snap install yq" || print_warning "yq のインストールに失敗。簡易パースを使用します。"
     fi
     if command -v yq >/dev/null 2>&1; then
