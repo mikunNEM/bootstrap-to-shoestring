@@ -439,7 +439,6 @@ collect_user_info() {
         fix_dir_permissions "$SHOESTRING_DIR"
         
         echo -e "${YELLOW}Bootstrap の target フォルダパスを入力してね:${NC}"
-        echo -e "${YELLOW}デフォルト（Enterで選択）: $BOOTSTRAP_DIR_DEFAULT${NC}"
         if [ -n "$detected_bootstrap_dir" ]; then
             echo -e "${BLUE}検出したパス: $detected_bootstrap_dir${NC}" >&2
         fi
@@ -458,7 +457,7 @@ collect_user_info() {
             print_info "docker-compose.yml を検出: $BOOTSTRAP_COMPOSE_DIR/docker-compose.yml"
         fi
         
-        echo -e "${YELLOW}バックアップの保存先フォルダを入力してね:${NC}"
+        echo -e "${YELLOW}重要なファイルをバックアップする保存先フォルダを入力してね:${NC}"
         echo -e "${YELLOW}デフォルト（Enterで選択）: $BACKUP_DIR_DEFAULT${NC}"
         read -r input
         BACKUP_DIR="$(expand_tilde "${input:-$BACKUP_DIR_DEFAULT}")"
@@ -475,19 +474,9 @@ collect_user_info() {
     if $SKIP_CONFIRM; then
         ENCRYPTED=false
     else
-        if confirm "addresses.yml は暗号化されてる？"; then
+        if confirm "target/addresses.yml は暗号化されてる？平文に変換してから実行してね！"; then
             ENCRYPTED=true
-            if [ -n "${SYMBOL_BOOTSTRAP_PASSWORD+x}" ]; then
-                print_info "環境変数 SYMBOL_BOOTSTRAP_PASSWORD を使うよ"
-            else
-                echo -e "${YELLOW}addresses.yml のパスワードを入力してね（非表示）:${NC}" >&2
-                read -rs password
-                echo
-                if [ -z "$password" ]; then
-                    error_exit "暗号化された addresses.yml にはパスワードが必要だよ"
-                fi
-                export SYMBOL_BOOTSTRAP_PASSWORD="$password"
-            fi
+            error_exit "暗号化された addresses.yml は使用できません。平文に変換後、スクリプトを実行してください。"
         else
             ENCRYPTED=false
             print_info "addresses.yml は平文だね！"
