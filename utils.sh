@@ -4,7 +4,7 @@
 # ログ、環境チェック、YAML 解析、ユーザー対話を管理します。
 #
 # 作成者: mikun (@mikunNEM, 2025-06-05)
-# バージョン: 2025-06-07-v5
+# バージョン: 2025-06-07
 
 set -e
 
@@ -264,4 +264,16 @@ rotate_log() {
     fi
 }
 
-export -f log error_exit print_success print_warning print_info ask_user expand_tilde confirm check_command parse_yaml validate_file validate_dir check_disk_space check_python_version check_venv_optional check_write_permission rotate_log
+# 進捗ドットを表示（非同期処理用） # 新規追加
+show_progress() {
+    local message="$1"
+    local pid=$2
+    echo -ne "${BLUE}ℹ️ $message${NC}" >&2
+    while kill -0 "$pid" 2>/dev/null; do
+        echo -n "." >&2
+        sleep 1
+    done
+    echo -e "${NC}" >&2
+}
+
+export -f log error_exit print_success print_warning print_info ask_user expand_tilde confirm check_command parse_yaml validate_file validate_dir check_disk_space check_python_version check_venv_optional check_write_permission rotate_log show_progress
