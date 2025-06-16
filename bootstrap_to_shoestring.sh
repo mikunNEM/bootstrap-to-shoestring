@@ -6,8 +6,7 @@
 # 使い方:
 #   1. スクリプトをダウンロード: curl -O https://github.com/mikunNEM/bootstrap-to-shoestring/raw/main/bootstrap_to_shoestring.sh
 #   2. 実行権限: chmod +x ./bootstrap_to_shoestring.sh
-#   3. 実行: bash ./bootstrap_to_shoestring.sh [-y]
-#      -y: 確認をスキップ（上級者向け）
+#   3. 実行: bash ./bootstrap_to_shoestring.sh
 
 # --- Ubuntu バージョンチェック & アップグレード案内 ---
 if [ -f /etc/os-release ]; then
