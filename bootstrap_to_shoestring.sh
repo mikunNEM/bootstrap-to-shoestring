@@ -3,8 +3,11 @@
 # bootstrap_to_shoestring.sh - Symbol Bootstrap から Shoestring への移行スクリプト
 # 誰でも簡単に移行！依存自動インストール、権限エラー解決、初心者向けガイダンス付き。
 #
-# 使い方:
+# 使い方:  　　　　　　　　　　　
+　　　まず、~/shoestring ディレクトリを作成
 #   1. スクリプトをダウンロード: curl -O https://github.com/mikunNEM/bootstrap-to-shoestring/raw/main/bootstrap_to_shoestring.sh
+                             curl -O https://github.com/mikunNEM/bootstrap-to-shoestring/raw/main/utils.sh
+                             
 #   2. 実行権限: chmod +x ./bootstrap_to_shoestring.sh
 #   3. 実行: bash ./bootstrap_to_shoestring.sh
 
