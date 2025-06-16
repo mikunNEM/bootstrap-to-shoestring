@@ -7,7 +7,7 @@
 #   1. スクリプトをダウンロード: curl -O https://github.com/mikunNEM/bootstrap-to-shoestring/raw/main/bootstrap_to_shoestring.sh
 #   2. 実行権限: chmod +x ./bootstrap_to_shoestring.sh
 #   3. 実行: bash ./bootstrap_to_shoestring.sh [-y]
-
+#      -y: 確認をスキップ（上級者向け）
 
 # --- Ubuntu バージョンチェック & アップグレード案内 ---
 if [ -f /etc/os-release ]; then
@@ -725,7 +725,7 @@ set_beneficiary_address() {
     fi
 }
 
-# データコピー（修正済み：進捗ドットと60秒タイムアウトを追加）
+# データコピー
 copy_data() {
     local src_db="$BOOTSTRAP_DIR/databases/db"
     local src_data="$BOOTSTRAP_DIR/nodes/node/data"
@@ -752,38 +752,18 @@ copy_data() {
         print_info "Bootstrap ノードを安全に停止するよ: $BOOTSTRAP_COMPOSE_DIR"
         cd "$BOOTSTRAP_COMPOSE_DIR" || error_exit "Bootstrap ディレクトリに移動できないよ: $BOOTSTRAP_COMPOSE_DIR"
         if [ -f "docker-compose.yml" ]; then
-            print_info "Bootstrap ノードを停止中（最大60秒待つよ）..."
-            # 非同期で docker-compose down を実行
-            sudo docker-compose down >>"$SHOESTRING_DIR/log/data_copy.log" 2>&1 &
-            local pid=$!
-            # 進捗ドットを表示
-            show_progress "停止処理中" "$pid" &
-            local progress_pid=$!
-            # 60秒のタイムアウト
-            local timeout=60
-            local elapsed=0
-            while kill -0 "$pid" 2>/dev/null && [ $elapsed -lt $timeout ]; do
-                sleep 1
-                ((elapsed++))
-            done
-            if kill -0 "$pid" 2>/dev/null; then
-                print_warning "60秒以内に停止が完了しませんでした。プロセスを終了します..."
-                sudo kill "$pid" 2>/dev/null || true
-                log "docker-compose down タイムアウト: $elapsed 秒経過" "WARNING"
-                error_exit "Bootstrap ノードの停止に失敗（タイムアウト）。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
-            fi
-            wait "$pid" 2>/dev/null || {
+            print_info "Bootstrap ノードを停止中（最大30秒待つよ）..."
+            sudo docker-compose down >>"$SHOESTRING_DIR/log/data_copy.log" 2>&1 || {
                 log "Bootstrap 停止エラー: $(tail -n 20 "$SHOESTRING_DIR/log/data_copy.log")" "ERROR"
                 error_exit "Bootstrap のノード停止に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
             }
-            kill "$progress_pid" 2>/dev/null || true
-            print_success "Bootstrap ノードを安全に停止したよ！"
             local containers
             containers=$(docker-compose ps -q 2>>"$SHOESTRING_DIR/log/data_copy.log")
             if [ -n "$containers" ]; then
                 log "残存コンテナ: $(docker ps -a | grep "$BOOTSTRAP_COMPOSE_DIR")" "ERROR"
                 error_exit "Bootstrap ノードがまだ動いてるよ！手動で停止してね: cd $BOOTSTRAP_COMPOSE_DIR && sudo docker-compose down"
             fi
+            print_info "Bootstrap ノードを安全に停止したよ！"
         else
             error_exit "docker-compose.yml が見つからないよ: $BOOTSTRAP_COMPOSE_DIR/docker-compose.yml"
         fi
@@ -798,8 +778,10 @@ copy_data() {
         log "データベースサイズ: $db_size_human" "INFO"
         mkdir -p "$dest_db" || error_exit "$dest_db の作成に失敗"
         fix_dir_permissions "$dest_db"
+        # ディレクトリ内容をログに記録
         ls -lR "$src_db" > "$SHOESTRING_DIR/log/src_db_contents.log" 2>&1
         log "Bootstrap データベース内容: $(cat "$SHOESTRING_DIR/log/src_db_contents.log")" "DEBUG"
+        # ディレクトリ構造を保持して移動
         sudo mv "$src_db"/* "$dest_db/" 2>>"$SHOESTRING_DIR/log/data_copy.log" || {
             log "データベース移動エラー: $(tail -n 20 "$SHOESTRING_DIR/log/data_copy.log")" "ERROR"
             error_exit "データベースの移動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
@@ -819,13 +801,16 @@ copy_data() {
         log "チェーンデータサイズ: $data_size_human" "INFO"
         mkdir -p "$dest_data" || error_exit "$dest_data の作成に失敗"
         fix_dir_permissions "$dest_data"
+        # ディレクトリ内容をログに記録
         ls -lR "$src_data" > "$SHOESTRING_DIR/log/src_data_contents.log" 2>&1
         log "Bootstrap データディレクトリ内容: $(cat "$SHOESTRING_DIR/log/src_data_contents.log")" "DEBUG"
+        # ディレクトリ構造を保持して移動
         sudo mv "$src_data"/* "$dest_data/" 2>>"$SHOESTRING_DIR/log/data_copy.log" || {
             log "データ移動エラー: $(tail -n 20 "$SHOESTRING_DIR/log/data_copy.log")" "ERROR"
             error_exit "チェーンデータの移動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
         }
         sudo rmdir "$src_data" 2>/dev/null || true
+        # 移動後の内容をログに記録
         ls -lR "$dest_data" > "$SHOESTRING_DIR/log/dest_data_contents.log" 2>&1
         log "Shoestring データディレクトリ内容: $(cat "$SHOESTRING_DIR/log/dest_data_contents.log")" "DEBUG"
         print_info "チェーンデータを移動したよ: $dest_data"
@@ -834,7 +819,7 @@ copy_data() {
     fi
 }
 
-# Shoestring セットアップ（修正済み：ポートチェック後に進捗表示を追加）
+# Shoestring セットアップ
 setup_shoestring() {
     print_info "Shoestring ノードをセットアップするよ"
     source "$SHOESTRING_DIR/shoestring-env/bin/activate" || error_exit "仮想環境の有効化に失敗"
@@ -1040,13 +1025,8 @@ setup_shoestring() {
     else
         print_warning "netstat が見つからないよ。ポート競合チェックをスキップ。"
     fi
-    print_info "Shoestring ノードを起動準備中..."
-    # docker-compose up の進捗をフィルタリングして表示
-    sudo docker-compose up -d 2>&1 | tee -a "$SHOESTRING_DIR/log/docker_compose.log" | grep -E "Pulling|Building|Creating|Starting|Started" || {
-        log "Docker Compose 起動エラー: $(tail -n 20 "$SHOESTRING_DIR/log/docker_compose.log")" "ERROR"
-        error_exit "Shoestring ノードの起動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/docker_compose.log"
-    }
-    print_success "Shoestring ノードを起動したよ！"
+    docker-compose up -d > "$SHOESTRING_DIR/log/docker_compose.log" 2>&1 || error_exit "Shoestring ノードの起動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/docker_compose.log"
+    print_info "Shoestring ノードを起動したよ！"
     deactivate
 }
 
