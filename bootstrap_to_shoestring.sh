@@ -788,8 +788,8 @@ copy_data() {
             error_exit "データベースの移動に失敗。ログを確認してね: cat $SHOESTRING_DIR/log/data_copy.log"
         }
         sudo rmdir "$src_db" 2>/dev/null || true
-        ls -lR "$dest_db" > "$SHOESTRING_DIR/log/dest_db_contents.log" 2>&1
-        log "Shoestring データベース内容: $(cat "$SHOESTRING_DIR/log/dest_db_contents.log")" "DEBUG"
+        #ls -lR "$dest_db" > "$SHOESTRING_DIR/log/dest_db_contents.log" 2>&1
+        #log "Shoestring データベース内容: $(cat "$SHOESTRING_DIR/log/dest_db_contents.log")" "DEBUG"
         print_info "データベースを移動したよ: $dest_db"
     else
         print_warning "データベースが見つからないよ: $src_db。移動はスキップ。"
