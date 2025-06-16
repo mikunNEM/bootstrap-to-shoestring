@@ -304,6 +304,11 @@ install_dependencies() {
     # yq（YAMLパーサー、オプション）
     if ! command -v yq >/dev/null 2>&1; then
         print_warning "yq が見つからないよ。addresses.yml の正確なパースに使うからインストールするね！"
+        retry_command "sudo apt-get clean" || error_exit "APTキャッシュのクリアに失敗: sudo apt-get clean"
+        retry_command "sudo apt-get update" || error_exit "APTリポジトリの更新に失敗: sudo apt-get update"
+        retry_command "sudo apt-get install -y software-properties-common" || error_exit "software-properties-commonのインストールに失敗"
+        retry_command "sudo add-apt-repository ppa:mikefarah/yq -y" || error_exit "yq PPAの追加に失敗: sudo add-apt-repository ppa:mikefarah/yq"
+        retry_command "sudo apt-get update" || error_exit "APTリポジトリの更新に失敗: sudo apt-get update"
         retry_command "sudo apt-get install -y yq" || print_warning "yq のインストールに失敗。簡易パースを使用します。"
     fi
     if command -v yq >/dev/null 2>&1; then
